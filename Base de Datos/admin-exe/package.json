@@ -15,7 +15,7 @@
     "appId": "com.kalory.admin",
     "productName": "KaloryAdmin",
     "directories": { "output": "release" },
-    "files": ["admin.html", "main.cjs", "preload.cjs", "api-url.cjs", "assets/**/*", "package.json"],
+    "files": ["admin.html", "main.cjs", "preload.cjs", "assets/**/*", "package.json"],
     "win": { "target": ["portable"], "icon": "assets/icon.ico" },
     "portable": { "artifactName": "KaloryAdmin-${version}-portable.exe" }
   }
