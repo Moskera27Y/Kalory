@@ -11,7 +11,7 @@ const links = [
 ];
 
 export default function Sidebar() {
-  const { user, logout, resetAll, serverUrl } = useStore();
+  const { user, logout, resetAll } = useStore();
   return (
     <aside className="hidden md:flex w-[248px] shrink-0 flex-col gap-2 p-5 glass-strong m-4 mr-0">
       <div className="px-2 py-2"><Logo size={38} /></div>
@@ -27,7 +27,7 @@ export default function Sidebar() {
         </div>
       )}
       <div className="flex items-center gap-2 rounded-xl border border-emerald/20 bg-emerald/10 px-3 py-2.5 text-xs text-emerald">
-        <span><b>{serverUrl ? 'En línea' : 'Plan activo'}</b> · {serverUrl ? 'Servidor' : 'Personalizado'}</span>
+        <span><b>Plan activo</b> · Personalizado</span>
         <span className="ml-auto relative flex h-2 w-2">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald opacity-60" />
           <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald" />

@@ -1,10 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Flame, Droplet, Trophy, ArrowRight, ExternalLink, ChevronDown, Loader2 } from 'lucide-react';
+import { Flame, Droplet, Trophy, ArrowRight, Loader2 } from 'lucide-react';
 import Logo from '../components/Logo';
 import { useStore } from '../lib/store';
-import { AUTH_ERRORS, getDb, isDesktop } from '../lib/db';
-import { DEFAULT_SERVER_URL } from '../lib/serverApi';
+import { AUTH_ERRORS } from '../lib/db';
 
 function GoogleG() {
   return (
@@ -24,7 +23,7 @@ const FEATURES = [
 ];
 
 export default function Welcome() {
-  const { register, login, googleSignIn, serverUrl, setServerUrl, useOfficialServer } = useStore();
+  const { register, login, googleSignIn } = useStore();
   const [tab, setTab] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -32,17 +31,6 @@ export default function Welcome() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
-  const [showGoogleCfg, setShowGoogleCfg] = useState(false);
-  const [clientId, setClientId] = useState('');
-  const [cfgSaved, setCfgSaved] = useState(false);
-  const [showServer, setShowServer] = useState(false);
-  const [srv, setSrv] = useState(serverUrl);
-  const [srvMsg, setSrvMsg] = useState('');
-  const [srvBusy, setSrvBusy] = useState(false);
-
-  useEffect(() => {
-    getDb().getGoogleClientId().then(setClientId).catch(() => undefined);
-  }, []);
 
   const submit = async () => {
     setError('');
@@ -62,19 +50,10 @@ export default function Welcome() {
     setGoogleBusy(true);
     try {
       const r = await googleSignIn();
-      if (!r.ok) {
-        if (r.error === 'no_client_id') setShowGoogleCfg(true);
-        setError(AUTH_ERRORS[r.error] ?? 'No se pudo completar el acceso con Google.');
-      }
+      if (!r.ok) setError(AUTH_ERRORS[r.error] ?? 'No se pudo completar el acceso con Google.');
     } finally {
       setGoogleBusy(false);
     }
-  };
-
-  const saveClientId = async () => {
-    await getDb().setGoogleClientId(clientId);
-    setCfgSaved(true);
-    setTimeout(() => setCfgSaved(false), 2500);
   };
 
   return (
@@ -144,78 +123,7 @@ export default function Welcome() {
           </motion.button>
           {googleBusy && <p className="mt-2 text-center text-xs text-muted">Completa el acceso en tu navegador…</p>}
 
-          <button onClick={() => setShowGoogleCfg(!showGoogleCfg)} className="mt-4 flex w-full items-center justify-center gap-1 text-xs text-muted hover:text-white">
-            Configurar acceso con Google <ChevronDown size={14} className={`transition-transform ${showGoogleCfg ? 'rotate-180' : ''}`} />
-          </button>
-          {showGoogleCfg && (
-            <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-xs">
-              <p className="text-muted leading-relaxed">
-                Para activar el botón de Google necesitas un <b className="text-white">Client ID de tipo “App de escritorio”</b> (gratis):
-              </p>
-              <a className="mt-1 inline-flex items-center gap-1 text-emerald hover:underline" href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer">
-                console.cloud.google.com/apis/credentials <ExternalLink size={12} />
-              </a>
-              <p className="mt-1 text-muted">Crea un “ID de cliente de OAuth” → tipo “App de escritorio” y pega aquí el ID:</p>
-              <div className="mt-2 flex gap-2">
-                <input value={clientId} onChange={(e) => setClientId(e.target.value)} className="input-kalory !py-2 !text-xs" placeholder="xxxx.apps.googleusercontent.com" />
-                <button onClick={saveClientId} className="chip !py-2 !text-xs !border-emerald/40 text-emerald whitespace-nowrap">
-                  {cfgSaved ? '✓ Guardado' : 'Guardar'}
-                </button>
-              </div>
-              {!isDesktop() && <p className="mt-2 text-fire">En el navegador el botón de Google no funciona: usa el programa instalado.</p>}
-            </div>
-          )}
-
-          <p className="mt-5 text-center text-[11px] text-muted">
-            {serverUrl ? `Conectado al servidor: ${serverUrl}` : 'Tus datos se guardan solo en este equipo. Sin conexión, todo sigue funcionando.'}
-          </p>
-
-          <button onClick={() => setShowServer(!showServer)} className="mt-3 flex w-full items-center justify-center gap-1 text-xs text-muted hover:text-white">
-            Conexión {serverUrl ? '· en línea' : '· solo en este equipo'} <ChevronDown size={14} className={`transition-transform ${showServer ? 'rotate-180' : ''}`} />
-          </button>
-          {showServer && (
-            <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-xs">
-              {DEFAULT_SERVER_URL && serverUrl === DEFAULT_SERVER_URL ? (
-                <p className="text-muted leading-relaxed">Conectado automáticamente al <b className="text-emerald">servidor oficial</b>. Tu cuenta funciona en cualquier equipo.</p>
-              ) : (
-                <p className="text-muted leading-relaxed">
-                  {DEFAULT_SERVER_URL
-                    ? 'Estás usando una conexión manual.'
-                    : 'Pega la dirección del servidor Kalory para usar tu cuenta en cualquier equipo. Vacío = solo este equipo.'}
-                </p>
-              )}
-              <div className="mt-2 flex gap-2">
-                <input value={srv} onChange={(e) => setSrv(e.target.value)} className="input-kalory !py-2 !text-xs" placeholder="http://tu-servidor:3001" />
-                <button
-                  onClick={async () => {
-                    const v = srv.trim().replace(/\/+$/, '');
-                    if (!v) { setServerUrl(''); return; }
-                    setSrvBusy(true); setSrvMsg('');
-                    try {
-                      const r = await fetch(v + '/api/health');
-                      const d = await r.json();
-                      if (d.ok) setServerUrl(v);
-                      else setSrvMsg('Ese servidor no responde como Kalory.');
-                    } catch { setSrvMsg('No se pudo contactar. Revisa la dirección y el puerto.'); }
-                    finally { setSrvBusy(false); }
-                  }}
-                  disabled={srvBusy}
-                  className="chip !py-2 !text-xs !border-emerald/40 text-emerald whitespace-nowrap disabled:opacity-50"
-                >
-                  {srvBusy ? '…' : 'Guardar'}
-                </button>
-              </div>
-              {srvMsg && <p className="mt-2 text-fire">{srvMsg}</p>}
-              <div className="mt-2 flex gap-3">
-                {DEFAULT_SERVER_URL && serverUrl !== DEFAULT_SERVER_URL && (
-                  <button onClick={() => useOfficialServer()} className="text-emerald hover:underline">Usar servidor oficial</button>
-                )}
-                {serverUrl && (
-                  <button onClick={() => setServerUrl('')} className="text-muted hover:text-white">Solo este equipo</button>
-                )}
-              </div>
-            </div>
-          )}
+          <p className="mt-5 text-center text-[11px] text-muted">Tu cuenta funciona en todos tus equipos.</p>
         </motion.div>
       </div>
     </div>
