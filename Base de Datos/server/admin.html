@@ -68,6 +68,7 @@
     <p class="k">Acceso administrador</p>
     <div id="srvRow" class="row" style="margin-top:10px; display:none">
       <input id="srv" placeholder="https://tu-servidor:3001" class="grow" />
+      <button onclick="resetApi()" title="Volver a la URL oficial">↺</button>
     </div>
     <div class="row" style="margin-top:10px">
       <input id="token" type="password" placeholder="ADMIN_TOKEN" class="grow" />
@@ -114,7 +115,29 @@
     const saved = localStorage.getItem('kalory-admin-api') || API;
     document.getElementById('srv').value = saved;
     API = saved.replace(/\/+$/, '');
-    document.getElementById('apiShow').textContent = 'Servidor: ' + (API || '(sin configurar)');
+    checkApi();
+  }
+  async function checkApi() {
+    const el = document.getElementById('apiShow');
+    if (!API) { el.textContent = 'Servidor: (sin configurar)'; el.style.color = ''; return; }
+    el.style.color = '';
+    el.textContent = 'Servidor: ' + API + ' · comprobando…';
+    try {
+      const r = await fetch(API + '/api/health');
+      const d = await r.json();
+      el.textContent = 'Servidor: ' + API + (d.ok ? ' · conectado ✓' : ' · no responde ✗');
+      el.style.color = d.ok ? '#34D399' : '#F87171';
+    } catch {
+      el.textContent = 'Servidor: ' + API + ' · sin conexión ✗ (revisa la URL o tu internet)';
+      el.style.color = '#F87171';
+    }
+  }
+  function resetApi() {
+    localStorage.removeItem('kalory-admin-api');
+    const baked = (window.KALORY_API || '').replace(/\/+$/, '');
+    document.getElementById('srv').value = baked;
+    API = baked;
+    checkApi();
   }
   let TOKEN = sessionStorage.getItem('kalory-admin') || '';
   if (TOKEN) { document.getElementById('token').value = TOKEN; enter(); }
@@ -129,6 +152,7 @@
     if (window.KALORY_EXE) {
       API = document.getElementById('srv').value.trim().replace(/\/+$/, '');
       localStorage.setItem('kalory-admin-api', API);
+      checkApi();
     }
     document.getElementById('gateErr').textContent = '';
     try {
