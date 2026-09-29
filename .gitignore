@@ -1,0 +1,24 @@
+# Dependencias y compilados (se reinstalan solos)
+node_modules/
+dist/
+release/
+win-unpacked/
+
+# Datos y secretos (SOLO en tu PC, jamás a Git)
+.env
+**/data/
+*.db
+*.db-journal
+
+# Electron / build
+*.log
+builder-debug.yml
+
+# Sistema y editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs de herramientas
+.local/

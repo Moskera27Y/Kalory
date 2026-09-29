@@ -1,0 +1,58 @@
+{
+  "name": "kalory",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "description": "Kalory Health & Fitness — Desktop fitness app",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "electron:dev": "npm run build && electron electron/main.cjs",
+    "dist:win": "npm run build && electron-builder --win portable --publish never"
+  },
+  "dependencies": {
+    "framer-motion": "^11.11.17",
+    "lucide-react": "^0.454.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^6.28.0",
+    "sql.js": "^1.14.2"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "electron": "^44.5.0",
+    "electron-builder": "^26.15.3",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.3"
+  },
+  "build": {
+    "appId": "com.kalory.app",
+    "productName": "Kalory",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "assets/**/*",
+      "node_modules/sql.js/**/*",
+      "package.json"
+    ],
+    "asarUnpack": ["**/*.wasm"],
+    "win": {
+      "target": ["portable"],
+      "icon": "assets/icon.ico"
+    },
+    "portable": {
+      "artifactName": "Kalory-${version}-portable.exe"
+    }
+  }
+}

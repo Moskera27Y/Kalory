@@ -1,0 +1,16 @@
+services:
+  kalory-db:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: 3001
+      JWT_SECRET: ${JWT_SECRET:-cambia-este-secreto}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-kalory-admin-local}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-60146882018-1ad06p3sgqlo46ka8s2msm50r2m2durd.apps.googleusercontent.com}
+    volumes:
+      - kalory-data:/srv/data
+    restart: unless-stopped
+
+volumes:
+  kalory-data:

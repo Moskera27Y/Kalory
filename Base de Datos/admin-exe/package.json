@@ -1,0 +1,22 @@
+{
+  "name": "kalory-admin",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Kalory Admin — panel de base de datos (escritorio)",
+  "main": "main.cjs",
+  "scripts": {
+    "dist:win": "electron-builder --win portable --publish never"
+  },
+  "devDependencies": {
+    "electron": "^44.5.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.kalory.admin",
+    "productName": "KaloryAdmin",
+    "directories": { "output": "release" },
+    "files": ["admin.html", "main.cjs", "preload.cjs", "assets/**/*", "package.json"],
+    "win": { "target": ["portable"], "icon": "assets/icon.ico" },
+    "portable": { "artifactName": "KaloryAdmin-${version}-portable.exe" }
+  }
+}

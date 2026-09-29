@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Kalory · Panel de Base de Datos</title>
+<style>
+  :root {
+    --bg: #070B16; --card: rgba(255,255,255,.045); --line: rgba(255,255,255,.1);
+    --txt: #F3F4F6; --mut: #9CA3AF; --em: #10B981; --emd: #059669;
+    --fire: #F59E0B; --hot: #EF4444;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; color: var(--txt);
+    font-family: Inter, 'Plus Jakarta Sans', system-ui, sans-serif;
+    background:
+      radial-gradient(900px 600px at 8% -5%, rgba(16,185,129,.16), transparent 60%),
+      radial-gradient(800px 600px at 105% 15%, rgba(245,158,11,.13), transparent 60%),
+      radial-gradient(1000px 700px at 50% 115%, rgba(239,68,68,.10), transparent 62%),
+      linear-gradient(160deg, #0B1224 0%, #070B16 45%, #0A0A12 100%);
+    background-attachment: fixed; min-height: 100vh;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 20px 60px; }
+  header { display: flex; align-items: center; gap: 14px; }
+  .logo { width: 46px; height: 46px; border-radius: 14px;
+    background: linear-gradient(135deg, var(--em), var(--fire) 60%, var(--hot));
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 24px; box-shadow: 0 0 24px -4px rgba(16,185,129,.55); }
+  h1 { font-size: 22px; margin: 0; }
+  .sub { color: var(--mut); font-size: 13px; margin: 2px 0 0; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 22px 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; backdrop-filter: blur(8px); }
+  .k { font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: var(--mut); }
+  .v { font-size: 26px; font-weight: 800; margin-top: 4px; }
+  .em { color: var(--em); } .fr { background: linear-gradient(90deg, var(--fire), var(--hot)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--mut); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  td { padding: 11px 12px; border-bottom: 1px solid rgba(255,255,255,.05); vertical-align: top; }
+  tr:hover td { background: rgba(255,255,255,.025); }
+  .pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+  .p-local { background: rgba(16,185,129,.15); color: #34D399; border: 1px solid rgba(16,185,129,.35); }
+  .p-google { background: rgba(245,158,11,.13); color: #FBBF24; border: 1px solid rgba(245,158,11,.35); }
+  .p-both { background: rgba(239,68,68,.12); color: #F87171; border: 1px solid rgba(239,68,68,.35); }
+  button { cursor: pointer; border-radius: 10px; border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--txt); padding: 8px 14px; font-size: 13px; }
+  button.primary { background: linear-gradient(90deg, var(--em), var(--emd)); border: none; font-weight: 700; box-shadow: 0 0 18px -4px rgba(16,185,129,.55); }
+  input { width: 100%; background: rgba(255,255,255,.05); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; color: var(--txt); font-size: 13px; }
+  #gate { max-width: 420px; margin: 12vh auto; }
+  .detail { margin-top: 14px; }
+  pre { background: rgba(0,0,0,.35); border: 1px solid var(--line); border-radius: 12px; padding: 14px; overflow: auto; font-size: 12px; max-height: 340px; }
+  .row { display: flex; gap: 10px; align-items: center; }
+  .grow { flex: 1; }
+  .err { color: #F87171; font-size: 13px; margin-top: 8px; }
+  .mut { color: var(--mut); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">🔥</div>
+    <div>
+      <h1>Kalory · Base de Datos</h1>
+      <p class="sub">Usuarios registrados e información · panel online</p>
+    </div>
+  </header>
+
+  <div id="gate" class="card">
+    <p class="k">Acceso administrador</p>
+    <div id="srvRow" class="row" style="margin-top:10px; display:none">
+      <input id="srv" placeholder="https://tu-servidor:3001" class="grow" />
+    </div>
+    <div class="row" style="margin-top:10px">
+      <input id="token" type="password" placeholder="ADMIN_TOKEN" class="grow" />
+      <button class="primary" onclick="enter()">Entrar</button>
+    </div>
+    <p id="gateErr" class="err"></p>
+    <p class="mut">El token se define en el servidor (variable ADMIN_TOKEN).</p>
+  </div>
+
+  <div id="app" style="display:none">
+    <div class="grid">
+      <div class="card"><p class="k">Usuarios</p><p class="v em" id="sUsers">–</p></div>
+      <div class="card"><p class="k">Comidas registradas</p><p class="v" id="sFoods">–</p></div>
+      <div class="card"><p class="k">Medallas</p><p class="v fr" id="sMedals">–</p></div>
+      <div class="card"><p class="k">Servidor</p><p class="v" style="font-size:16px" id="sTime">–</p></div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <p class="k grow">Usuarios registrados</p>
+        <button onclick="load()">↻ Actualizar</button>
+      </div>
+      <div style="overflow:auto; margin-top:8px">
+        <table>
+          <thead><tr><th>#</th><th>Nombre / correo</th><th>Acceso</th><th>Perfil</th><th>Comidas</th><th>Medallas</th><th>Última actividad</th><th></th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="detail" class="card detail" style="display:none">
+      <div class="row"><p class="k grow" id="dTitle">Detalle</p><button onclick="hideDetail()">Cerrar</button></div>
+      <pre id="dBody"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+  // En el servidor usa rutas relativas; en el .exe, window.KALORY_API trae la URL.
+  let API = (window.KALORY_API || '').replace(/\/+$/, '');
+  if (window.KALORY_EXE) {
+    document.getElementById('srvRow').style.display = 'flex';
+    const saved = localStorage.getItem('kalory-admin-api') || API;
+    document.getElementById('srv').value = saved;
+    API = saved.replace(/\/+$/, '');
+  }
+  let TOKEN = sessionStorage.getItem('kalory-admin') || '';
+  if (TOKEN) { document.getElementById('token').value = TOKEN; enter(); }
+
+  async function api(path) {
+    const r = await fetch(API + path, { headers: { 'X-Admin-Token': TOKEN } });
+    if (r.status === 403) throw new Error('Token incorrecto');
+    return r.json();
+  }
+  async function enter() {
+    TOKEN = document.getElementById('token').value.trim();
+    if (window.KALORY_EXE) {
+      API = document.getElementById('srv').value.trim().replace(/\/+$/, '');
+      localStorage.setItem('kalory-admin-api', API);
+    }
+    document.getElementById('gateErr').textContent = '';
+    try {
+      await load();
+      sessionStorage.setItem('kalory-admin', TOKEN);
+      document.getElementById('gate').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+    } catch (e) { document.getElementById('gateErr').textContent = e.message; }
+  }
+  function pill(p) {
+    const c = p === 'local' ? 'p-local' : p === 'google' ? 'p-google' : 'p-both';
+    return `<span class="pill ${c}">${p}</span>`;
+  }
+  async function load() {
+    const [users, health] = await Promise.all([api('/api/admin/users'), fetch(API + '/api/health').then(r => r.json())]);
+    document.getElementById('sUsers').textContent = users.totals.users;
+    document.getElementById('sFoods').textContent = users.totals.foods;
+    document.getElementById('sMedals').textContent = users.totals.medals;
+    document.getElementById('sTime').textContent = new Date(health.time).toLocaleString('es');
+    document.getElementById('rows').innerHTML = users.users.map(u => `<tr>
+      <td><b>${u.id}</b></td>
+      <td><b>${escapeHtml(u.name)}</b><br><span class="mut">${escapeHtml(u.email)}</span><br><span class="mut">alta: ${new Date(u.created_at).toLocaleDateString('es')}</span></td>
+      <td>${pill(u.provider)}</td>
+      <td>${u.has_profile ? '✅' : '—'}</td>
+      <td>${u.foods}</td>
+      <td>${u.medals}</td>
+      <td class="mut">${u.last_activity ? new Date(u.last_activity).toLocaleString('es') : '—'}</td>
+      <td><button onclick="detail(${u.id})">Ver</button></td>
+    </tr>`).join('') || '<tr><td colspan="8" class="mut">Sin usuarios todavía.</td></tr>';
+  }
+  async function detail(id) {
+    const d = await api('/api/admin/users/' + id);
+    document.getElementById('dTitle').textContent = `Usuario #${d.user.id} · ${d.user.name}`;
+    document.getElementById('dBody').textContent = JSON.stringify(d, null, 2);
+    document.getElementById('detail').style.display = 'block';
+    document.getElementById('detail').scrollIntoView({ behavior: 'smooth' });
+  }
+  function hideDetail() { document.getElementById('detail').style.display = 'none'; }
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  document.getElementById('token').addEventListener('keydown', e => { if (e.key === 'Enter') enter(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+
+html, body, #root { height: 100%; }
+
+body {
+  @apply text-mist font-sans antialiased overflow-hidden;
+  background: #070B16;
+}
+
+/* Fondo premium: base profunda + resplandores fijos con los colores del logo */
+.app-bg {
+  position: relative;
+  background:
+    radial-gradient(900px 600px at 8% -5%, rgba(16, 185, 129, 0.16), transparent 60%),
+    radial-gradient(800px 600px at 105% 15%, rgba(245, 158, 11, 0.13), transparent 60%),
+    radial-gradient(1000px 700px at 50% 115%, rgba(239, 68, 68, 0.10), transparent 62%),
+    radial-gradient(600px 500px at 85% 90%, rgba(5, 150, 105, 0.08), transparent 60%),
+    linear-gradient(160deg, #0B1224 0%, #070B16 45%, #0A0A12 100%);
+  background-attachment: fixed;
+}
+
+/* Anillo cónico sutil que evoca el logo, fijo al fondo */
+.app-bg::before {
+  content: '';
+  position: absolute;
+  top: -320px;
+  right: -200px;
+  width: 640px;
+  height: 640px;
+  border-radius: 9999px;
+  background: conic-gradient(from 200deg, rgba(16,185,129,0.10), rgba(245,158,11,0.08), rgba(239,68,68,0.07), rgba(16,185,129,0.10));
+  filter: blur(70px);
+  pointer-events: none;
+}
+
+/* Viñeta para dar profundidad */
+.app-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(0, 0, 0, 0.45) 100%);
+  pointer-events: none;
+}
+
+/* Grano fino para textura */
+.noise {
+  position: absolute;
+  inset: 0;
+  opacity: 0.05;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+}
+
+/* Scrollbar elegante */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 8px; border: 2px solid #0f172a; }
+::-webkit-scrollbar-thumb:hover { background: #059669; }
+
+@layer components {
+  .glass {
+    @apply bg-white/[0.04] backdrop-blur-md border border-white/10 shadow-card rounded-2xl;
+  }
+  .glass-strong {
+    @apply bg-slate-900/70 backdrop-blur-xl border border-white/10 shadow-card rounded-2xl;
+  }
+  .text-gradient-emerald {
+    @apply bg-gradient-to-r from-[#10B981] to-[#059669] bg-clip-text text-transparent;
+  }
+  .text-gradient-fire {
+    @apply bg-gradient-to-r from-[#F59E0B] to-[#EF4444] bg-clip-text text-transparent;
+  }
+  .btn-emerald {
+    @apply bg-gradient-to-r from-[#10B981] to-[#059669] text-white font-semibold rounded-xl px-5 py-3 shadow-glow-emerald hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-40 disabled:shadow-none;
+  }
+  .btn-fire {
+    @apply bg-gradient-to-r from-[#F59E0B] to-[#EF4444] text-white font-semibold rounded-xl px-5 py-3 shadow-glow-fire hover:brightness-110 active:scale-[0.98] transition-all;
+  }
+  .input-kalory {
+    @apply w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-mist placeholder:text-muted/60 outline-none focus:border-emerald/60 focus:ring-2 focus:ring-emerald/20 transition-all;
+  }
+  .chip {
+    @apply px-4 py-2.5 rounded-xl border border-white/10 bg-white/5 text-sm font-medium cursor-pointer transition-all select-none;
+  }
+  .card-glow-emerald {
+    position: relative;
+  }
+  .card-glow-emerald::before {
+    content: '';
+    position: absolute; inset: -1px;
+    border-radius: 1rem;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(16,185,129,0.6), transparent 40%, transparent 60%, rgba(16,185,129,0.3));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "kalory-server",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Kalory API online — autenticación y datos centrales",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "sql.js": "^1.14.2"
+  }
+}

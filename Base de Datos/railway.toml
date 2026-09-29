@@ -1,0 +1,8 @@
+# Railway: usa el Dockerfile de esta carpeta y vigila la salud del API.
+[build]
+builder = "DOCKERFILE"
+
+[deploy]
+healthcheckPath = "/api/health"
+healthcheckTimeout = 60
+restartPolicyType = "ON_FAILURE"
