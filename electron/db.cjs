@@ -18,11 +18,20 @@ let currentUserId = null;
 
 /** Client ID de Google preconfigurado (es público por diseño, va en la URL de login). */
 const DEFAULT_GOOGLE_CLIENT_ID = '60146882018-1ad06p3sgqlo46ka8s2msm50r2m2durd.apps.googleusercontent.com';
+/** Secreto de Google (solo si el cliente es tipo "Web"; los de "Escritorio" no lo usan).
+ *  Se graba aquí al compilar; NUNCA se muestra en la interfaz ni viaja al renderer. */
+const DEFAULT_GOOGLE_CLIENT_SECRET = '';
 
 function getGoogleClientId() {
   const row = rows("SELECT value FROM kv WHERE key='google_client_id'")[0];
   const v = row ? String(row.value || '').trim() : '';
   return v || DEFAULT_GOOGLE_CLIENT_ID;
+}
+
+function getGoogleClientSecret() {
+  const row = rows("SELECT value FROM kv WHERE key='google_client_secret'")[0];
+  const v = row ? String(row.value || '').trim() : '';
+  return v || DEFAULT_GOOGLE_CLIENT_SECRET;
 }
 
 function resolveDbFile() {
@@ -236,11 +245,12 @@ const handlers = {
   'auth:google': async () => {
     await ready();
     const clientId = getGoogleClientId();
+    const clientSecret = getGoogleClientSecret();
     let g;
     try {
-      g = await signInWithGoogle(clientId);
+      g = await signInWithGoogle(clientId, clientSecret);
     } catch (e) {
-      return { ok: false, error: e && e.code ? e.code : 'google_error' };
+      return { ok: false, error: e && e.code ? e.code : 'google_error', detail: (e && e.detail) || undefined };
     }
     let u = rows('SELECT * FROM users WHERE google_sub=?', [g.sub])[0];
     if (!u) {
@@ -269,11 +279,12 @@ const handlers = {
   'auth:google-token': async () => {
     await ready();
     const clientId = getGoogleClientId();
+    const clientSecret = getGoogleClientSecret();
     try {
-      const g = await signInWithGoogle(clientId);
+      const g = await signInWithGoogle(clientId, clientSecret);
       return { ok: true, idToken: g.idToken };
     } catch (e) {
-      return { ok: false, error: e && e.code ? e.code : 'google_error' };
+      return { ok: false, error: e && e.code ? e.code : 'google_error', detail: (e && e.detail) || undefined };
     }
   },
 

@@ -107,7 +107,7 @@ export class ServerDb implements DbApi {
       const bridge = window.kaloryDb;
       if (!bridge?.getGoogleIdToken) return { ok: false, error: 'solo_exe' };
       const t = await bridge.getGoogleIdToken();
-      if (!t.ok) return { ok: false, error: (t as { error: string }).error };
+      if (!t.ok) return { ok: false, error: (t as { error: string }).error, detail: (t as { detail?: string }).detail };
       const d = await req<{ token: string; user: AuthUser }>(
         this.url, '', '/api/auth/google', 'POST', { idToken: (t as { idToken: string }).idToken });
       saveSession(this.url, d.token);

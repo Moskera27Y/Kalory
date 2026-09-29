@@ -50,7 +50,7 @@ export default function Welcome() {
     setGoogleBusy(true);
     try {
       const r = await googleSignIn();
-      if (!r.ok) setError(AUTH_ERRORS[r.error] ?? 'No se pudo completar el acceso con Google.');
+      if (!r.ok) setError((AUTH_ERRORS[r.error] ?? 'No se pudo completar el acceso con Google.') + (r.detail ? ` Detalle: ${r.detail}` : ''));
     } finally {
       setGoogleBusy(false);
     }

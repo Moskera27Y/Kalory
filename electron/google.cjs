@@ -50,7 +50,7 @@ function startCallbackServer() {
   });
 }
 
-async function signInWithGoogle(clientId) {
+async function signInWithGoogle(clientId, clientSecret) {
   if (!clientId) throw err('no_client_id');
   const verifier = b64url(crypto.randomBytes(32));
   const challenge = b64url(crypto.createHash('sha256').update(verifier).digest());
@@ -80,14 +80,28 @@ async function signInWithGoogle(clientId) {
     body: new URLSearchParams({
       code,
       client_id: clientId,
+      // Los clientes tipo "Web" exigen el secreto; los de "Escritorio" no.
+      ...(clientSecret ? { client_secret: clientSecret } : {}),
       redirect_uri: redirectUri,
       grant_type: 'authorization_code',
       code_verifier: verifier,
     }).toString(),
   });
-  if (!tokenRes.ok) throw err('token_exchange_failed');
-  const tok = await tokenRes.json();
-  if (!tok.id_token) throw err('token_exchange_failed');
+  if (!tokenRes.ok) {
+    const raw = await tokenRes.text().catch(() => '');
+    let code = `HTTP ${tokenRes.status}`;
+    try { code = JSON.parse(raw).error || code; } catch { /* no JSON */ }
+    try { console.error('[google] token exchange:', tokenRes.status, raw.slice(0, 300)); } catch { /* ignore */ }
+    const e = err('token_exchange_failed');
+    e.detail = code;
+    throw e;
+  }
+  const tok = await tokenRes.json().catch(() => null);
+  if (!tok || !tok.id_token) {
+    const e = err('token_exchange_failed');
+    e.detail = 'sin id_token';
+    throw e;
+  }
   const payload = JSON.parse(Buffer.from(tok.id_token.split('.')[1], 'base64').toString('utf8'));
   if (!payload.sub || !payload.email) throw err('bad_profile');
   return { sub: payload.sub, email: payload.email, name: payload.name || payload.email, idToken: tok.id_token };

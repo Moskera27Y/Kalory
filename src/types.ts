@@ -77,4 +77,4 @@ export interface AuthUser {
   provider: string;
 }
 
-export type AuthResult = { ok: true; user: AuthUser } | { ok: false; error: string };
+export type AuthResult = { ok: true; user: AuthUser } | { ok: false; error: string; detail?: string };
