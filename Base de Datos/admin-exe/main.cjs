@@ -6,7 +6,7 @@
 const { app, BrowserWindow, shell } = require('electron');
 const path = require('path');
 
-const API_URL = process.env.KALORY_API || 'https://TU-SERVIDOR';
+const API_URL = process.env.KALORY_API || 'https://kalory-production.up.railway.app';
 
 function createWindow() {
   const win = new BrowserWindow({
