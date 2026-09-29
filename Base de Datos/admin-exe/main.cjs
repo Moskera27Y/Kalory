@@ -5,8 +5,8 @@
  */
 const { app, BrowserWindow, shell } = require('electron');
 const path = require('path');
-
-const API_URL = process.env.KALORY_API || 'https://kalory-production.up.railway.app';
+const { API_URL } = require('./api-url.cjs');
+void API_URL;
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -41,5 +41,3 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
-
-module.exports = { API_URL };

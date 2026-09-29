@@ -74,6 +74,7 @@
       <button class="primary" onclick="enter()">Entrar</button>
     </div>
     <p id="gateErr" class="err"></p>
+    <p class="mut" id="apiShow"></p>
     <p class="mut">El token se define en el servidor (variable ADMIN_TOKEN).</p>
   </div>
 
@@ -113,6 +114,7 @@
     const saved = localStorage.getItem('kalory-admin-api') || API;
     document.getElementById('srv').value = saved;
     API = saved.replace(/\/+$/, '');
+    document.getElementById('apiShow').textContent = 'Servidor: ' + (API || '(sin configurar)');
   }
   let TOKEN = sessionStorage.getItem('kalory-admin') || '';
   if (TOKEN) { document.getElementById('token').value = TOKEN; enter(); }
