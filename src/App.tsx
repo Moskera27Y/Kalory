@@ -82,7 +82,7 @@ function AnimatedRoutes() {
         </AnimatePresence>
       </main>
 
-      <nav className="md:hidden fixed bottom-3 left-3 right-3 z-40 glass-strong flex justify-around p-2">
+      <nav className="md:hidden fixed bottom-3 left-3 right-3 z-40 glass-strong flex justify-around p-2 [margin-bottom:env(safe-area-inset-bottom)]">
         {[
           { to: '/', icon: LayoutDashboard, label: 'Inicio' },
           { to: '/rutinas', icon: Dumbbell, label: 'Rutinas' },

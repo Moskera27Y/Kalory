@@ -1,0 +1,21 @@
+{
+  "name": "kalory-mobil",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Kalory Android — envoltorio Capacitor de la app web",
+  "scripts": {
+    "sync": "npm run build-web && npx cap sync android",
+    "build-web": "npm --prefix .. run build",
+    "apk": "npm run sync && npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.3",
+    "@capacitor/core": "^7.4.3",
+    "@capacitor/keyboard": "^7.0.2",
+    "@capacitor/splash-screen": "^7.0.3",
+    "@capacitor/status-bar": "^7.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.3"
+  }
+}

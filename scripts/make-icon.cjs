@@ -170,12 +170,18 @@ function buildIco(pngs) {
 }
 
 // ---------- main ----------
-const full = paint(SIZE);
-const sizes = [256, 64, 48, 32, 16];
-const pngs = sizes.map((s) => ({
-  size: s,
-  data: encodePng(s === SIZE ? full : downsample(full, SIZE, s), s),
-}));
-fs.mkdirSync(path.dirname(OUT), { recursive: true });
-fs.writeFileSync(OUT, buildIco(pngs));
-console.log('Icono creado:', OUT, fs.statSync(OUT).size, 'bytes');
+function buildAll() {
+  const full = paint(SIZE);
+  const sizes = [256, 64, 48, 32, 16];
+  const pngs = sizes.map((s) => ({
+    size: s,
+    data: encodePng(s === SIZE ? full : downsample(full, SIZE, s), s),
+  }));
+  fs.mkdirSync(path.dirname(OUT), { recursive: true });
+  fs.writeFileSync(OUT, buildIco(pngs));
+  console.log('Icono creado:', OUT, fs.statSync(OUT).size, 'bytes');
+  return full;
+}
+
+if (require.main === module) buildAll();
+module.exports = { paint, downsample, encodePng, SIZE };

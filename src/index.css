@@ -61,6 +61,21 @@ body {
 ::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 8px; border: 2px solid #0f172a; }
 ::-webkit-scrollbar-thumb:hover { background: #059669; }
 
+/* Móvil (Capacitor/WebView): áreas seguras, sin rebote ni resaltado táctil */
+@media (pointer: coarse) {
+  body {
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+  }
+  #root {
+    padding-top: env(safe-area-inset-top);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+  input, select, textarea { font-size: 16px; }
+}
+
 @layer components {
   .glass {
     @apply bg-white/[0.04] backdrop-blur-md border border-white/10 shadow-card rounded-2xl;

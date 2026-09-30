@@ -21,6 +21,14 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Mobil / Android (generados locales)
+Mobil/tools/
+Mobil/android/.gradle/
+Mobil/android/app/build/
+Mobil/android/app/release/
+Mobil/android/local.properties
+Mobil/android/capacitor.settings.gradle
+
 # Logs de herramientas
 .local/
 tsconfig.tsbuildinfo
