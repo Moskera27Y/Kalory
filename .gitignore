@@ -6,6 +6,7 @@ win-unpacked/
 
 # Datos y secretos (SOLO en tu PC, jamás a Git)
 .env
+electron/google-secret.local.cjs
 **/data/
 *.db
 *.db-journal

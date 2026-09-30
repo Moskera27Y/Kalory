@@ -19,8 +19,17 @@ let currentUserId = null;
 /** Client ID de Google preconfigurado (es público por diseño, va en la URL de login). */
 const DEFAULT_GOOGLE_CLIENT_ID = '60146882018-1ad06p3sgqlo46ka8s2msm50r2m2durd.apps.googleusercontent.com';
 /** Secreto de Google (solo si el cliente es tipo "Web"; los de "Escritorio" no lo usan).
- *  Se graba aquí al compilar; NUNCA se muestra en la interfaz ni viaja al renderer. */
-const DEFAULT_GOOGLE_CLIENT_SECRET = '';
+ *  Vive en google-secret.local.cjs (no versionado); NUNCA se muestra en la interfaz ni viaja al renderer. */
+function loadLocalGoogleSecret() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const m = require('./google-secret.local.cjs');
+    return String((m && m.GOOGLE_CLIENT_SECRET) || '').trim();
+  } catch {
+    return '';
+  }
+}
+const DEFAULT_GOOGLE_CLIENT_SECRET = loadLocalGoogleSecret();
 
 function getGoogleClientId() {
   const row = rows("SELECT value FROM kv WHERE key='google_client_id'")[0];
