@@ -1,7 +1,7 @@
 {
   "name": "kalory",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.1.0",
   "type": "module",
   "main": "electron/main.cjs",
   "description": "Kalory Health & Fitness — Desktop fitness app",
@@ -48,11 +48,19 @@
     ],
     "asarUnpack": ["**/*.wasm"],
     "win": {
-      "target": ["portable"],
+      "target": ["portable", "nsis"],
       "icon": "assets/icon.ico"
     },
     "portable": {
       "artifactName": "Kalory-${version}-portable.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Kalory",
+      "artifactName": "Kalory-${version}-setup.exe"
     }
   }
 }

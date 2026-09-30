@@ -8,7 +8,7 @@
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { app } = require('electron');
+const { app, dialog } = require('electron');
 const { signInWithGoogle } = require('./google.cjs');
 
 let SQL = null;
@@ -119,6 +119,13 @@ async function ready() {
       unlocked_at TEXT NOT NULL,
       PRIMARY KEY(user_id, id)
     );
+    CREATE TABLE IF NOT EXISTS weight_log(
+      user_id INTEGER NOT NULL DEFAULT 0,
+      date TEXT NOT NULL,
+      weight REAL NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY(user_id, date)
+    );
     CREATE INDEX IF NOT EXISTS idx_food_user_date ON food_log(user_id, date);
     CREATE INDEX IF NOT EXISTS idx_water_user_date ON water_log(user_id, date);
   `);
@@ -170,6 +177,11 @@ function run(sql, params = []) {
 }
 
 const now = () => new Date().toISOString();
+function nextDayStr(s) {
+  const d = new Date(s + 'T12:00:00');
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
 const publicUser = (r) => ({ id: r.id, name: r.name, email: r.email, provider: r.provider || 'local' });
 
 function hashPassword(password, salt) {
@@ -372,6 +384,104 @@ const handlers = {
     run('INSERT INTO achievement(user_id, id, unlocked_at) VALUES(?,?,?) ON CONFLICT(user_id, id) DO NOTHING', [uid, id, at]);
     persist();
     return at;
+  },
+
+  'kalory:set-weight': async ({ date, weight }) => {
+    await ready();
+    const uid = requireUid();
+    run(`INSERT INTO weight_log(user_id, date, weight, created_at) VALUES(?,?,?,?)
+         ON CONFLICT(user_id, date) DO UPDATE SET weight=excluded.weight, created_at=excluded.created_at`,
+      [uid, date, weight, now()]);
+    persist();
+    return true;
+  },
+
+  'kalory:get-weights': async ({ from, to }) => {
+    await ready();
+    const uid = requireUid();
+    return rows('SELECT date, weight FROM weight_log WHERE user_id=? AND date>=? AND date<=? ORDER BY date', [uid, from || '2000-01-01', to || '2999-12-31']);
+  },
+
+  'kalory:history': async ({ from, to }) => {
+    await ready();
+    const uid = requireUid();
+    const f = from || '2000-01-01', t = to || '2999-12-31';
+    const days = new Map();
+    const get = (d) => {
+      if (!days.has(d)) days.set(d, { date: d, kcal: 0, protein: 0, carbs: 0, fat: 0, waterMl: 0, exercises: 0, weight: null });
+      return days.get(d);
+    };
+    for (const r of rows('SELECT date, kcal, protein, carbs, fat FROM food_log WHERE user_id=? AND date>=? AND date<=?', [uid, f, t])) {
+      const d = get(r.date);
+      d.kcal += r.kcal; d.protein += r.protein; d.carbs += r.carbs; d.fat += r.fat;
+    }
+    for (const r of rows('SELECT date, SUM(ml) AS ml FROM water_log WHERE user_id=? AND date>=? AND date<=? GROUP BY date', [uid, f, t])) {
+      get(r.date).waterMl = Math.max(0, r.ml);
+    }
+    for (const r of rows('SELECT date, COUNT(*) AS n FROM workout_log WHERE user_id=? AND date>=? AND date<=? GROUP BY date', [uid, f, t])) {
+      get(r.date).exercises = r.n;
+    }
+    for (const r of rows('SELECT date, weight FROM weight_log WHERE user_id=? AND date>=? AND date<=?', [uid, f, t])) {
+      get(r.date).weight = r.weight;
+    }
+    const out = [];
+    for (let d = f; d <= t; d = nextDayStr(d)) {
+      out.push(days.get(d) || { date: d, kcal: 0, protein: 0, carbs: 0, fat: 0, waterMl: 0, exercises: 0, weight: null });
+    }
+    return out;
+  },
+
+  'kalory:export': async () => {
+    await ready();
+    const uid = requireUid();
+    const u = rows('SELECT * FROM users WHERE id=?', [uid])[0];
+    const p = rows('SELECT profile_json, targets_json FROM user_profile WHERE user_id=?', [uid])[0];
+    return {
+      type: 'kalory-backup', version: 1, exported_at: now(),
+      user: u ? { id: u.id, name: u.name, email: u.email, provider: u.provider } : null,
+      profile: p ? JSON.parse(p.profile_json) : null,
+      targets: p ? JSON.parse(p.targets_json) : null,
+      foods: rows('SELECT date,name,kcal,protein,carbs,fat,meal,created_at FROM food_log WHERE user_id=? ORDER BY id', [uid]),
+      waters: rows('SELECT date,ml,created_at FROM water_log WHERE user_id=? ORDER BY id', [uid]),
+      workouts: rows('SELECT date,exercise FROM workout_log WHERE user_id=?', [uid]),
+      achievements: rows('SELECT id,unlocked_at FROM achievement WHERE user_id=? ORDER BY unlocked_at', [uid]),
+      weights: rows('SELECT date,weight FROM weight_log WHERE user_id=? ORDER BY date', [uid]),
+    };
+  },
+
+  'kalory:backup-db': async () => {
+    await ready();
+    persist();
+    const win = require('electron').BrowserWindow.getFocusedWindow();
+    const r = await dialog.showSaveDialog(win || undefined, {
+      title: 'Guardar copia de seguridad',
+      defaultPath: `kalory-backup-${new Date().toISOString().slice(0, 10)}.db`,
+      filters: [{ name: 'Base de datos Kalory', extensions: ['db'] }],
+    });
+    if (r.canceled || !r.filePath) return null;
+    fs.copyFileSync(dbFile, r.filePath);
+    return r.filePath;
+  },
+
+  'kalory:restore-db': async () => {
+    await ready();
+    const win = require('electron').BrowserWindow.getFocusedWindow();
+    const r = await dialog.showOpenDialog(win || undefined, {
+      title: 'Restaurar copia de seguridad',
+      filters: [{ name: 'Base de datos Kalory', extensions: ['db'] }],
+      properties: ['openFile'],
+    });
+    if (r.canceled || !r.filePaths[0]) return false;
+    const bytes = fs.readFileSync(r.filePaths[0]);
+    if (bytes.length < 100 || bytes.slice(0, 16).toString('utf8') !== 'SQLite format 3\x00') {
+      throw Object.assign(new Error('bad_file'), { code: 'bad_file' });
+    }
+    try { db.close(); } catch { /* ignore */ }
+    db = null;
+    fs.copyFileSync(dbFile, dbFile + '.bak-' + Date.now());
+    fs.copyFileSync(r.filePaths[0], dbFile);
+    await ready();
+    return true;
   },
 
   'kalory:stats': async () => {

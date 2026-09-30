@@ -1,4 +1,4 @@
-import type { DayData, FoodEntry, MacroTargets, UserProfile, AchievementRow, AuthUser, AuthResult } from '../types';
+import type { DayData, DayHistory, FoodEntry, MacroTargets, UserProfile, AchievementRow, AuthUser, AuthResult, WeightEntry } from '../types';
 
 /**
  * Acceso a datos: usa SQLite local (vía preload en el .exe) o
@@ -22,6 +22,12 @@ export interface DbApi {
   unlock: (id: string) => Promise<string>;
   stats: () => Promise<{ totalFoods: number; activeDays: number }>;
   resetAll: () => Promise<boolean>;
+  setWeight: (w: { date: string; weight: number }) => Promise<boolean>;
+  getWeights: (r: { from: string; to: string }) => Promise<WeightEntry[]>;
+  getHistory: (r: { from: string; to: string }) => Promise<DayHistory[]>;
+  exportData: () => Promise<Record<string, unknown>>;
+  backupDb?: () => Promise<string | null>;
+  restoreDb?: () => Promise<boolean>;
 }
 
 declare global {
@@ -38,6 +44,7 @@ interface FallbackState {
   foods: (FoodEntry & { userId: number })[];
   water: { userId: number; date: string; ml: number }[];
   workouts: { userId: number; date: string; exercise: string }[];
+  weights: { userId: number; date: string; weight: number }[];
   googleClientId: string;
   seq: number;
 }
@@ -49,7 +56,7 @@ function loadFb(): FallbackState {
     const raw = localStorage.getItem(KEY);
     if (raw) return JSON.parse(raw) as FallbackState;
   } catch { /* ignore */ }
-  return { users: [], sessionId: null, profiles: {}, achievements: [], foods: [], water: [], workouts: [], googleClientId: '', seq: 1 };
+  return { users: [], sessionId: null, profiles: {}, achievements: [], foods: [], water: [], workouts: [], weights: [], googleClientId: '', seq: 1 };
 }
 
 function saveFb(s: FallbackState) {
@@ -192,8 +199,68 @@ const fallback: DbApi = {
     s.water = s.water.filter((x) => x.userId !== uid);
     s.workouts = s.workouts.filter((x) => x.userId !== uid);
     s.achievements = s.achievements.filter((x) => x.userId !== uid);
+    s.weights = s.weights.filter((x) => x.userId !== uid);
     saveFb(s);
     return true;
+  },
+  async setWeight(w) {
+    const s = loadFb();
+    if (s.sessionId == null) throw Object.assign(new Error('no_session'), { code: 'no_session' });
+    s.weights = s.weights.filter((x) => !(x.userId === s.sessionId && x.date === w.date));
+    s.weights.push({ userId: s.sessionId, ...w });
+    saveFb(s);
+    return true;
+  },
+  async getWeights(r) {
+    const s = loadFb();
+    return s.weights
+      .filter((x) => x.userId === s.sessionId && x.date >= r.from && x.date <= r.to)
+      .sort((a, b) => (a.date < b.date ? -1 : 1))
+      .map(({ date, weight }) => ({ date, weight }));
+  },
+  async getHistory(r) {
+    const s = loadFb();
+    const uid = s.sessionId;
+    const map = new Map<string, DayHistory>();
+    const get = (date: string): DayHistory => {
+      if (!map.has(date)) map.set(date, { date, kcal: 0, protein: 0, carbs: 0, fat: 0, waterMl: 0, exercises: 0, weight: null });
+      return map.get(date)!;
+    };
+    for (const f of s.foods.filter((x) => x.userId === uid && x.date >= r.from && x.date <= r.to)) {
+      const d = get(f.date);
+      d.kcal += f.kcal; d.protein += f.protein; d.carbs += f.carbs; d.fat += f.fat;
+    }
+    for (const w of s.water.filter((x) => x.userId === uid && x.date >= r.from && x.date <= r.to)) {
+      get(w.date).waterMl = Math.max(0, get(w.date).waterMl + w.ml);
+    }
+    for (const x of s.workouts.filter((x) => x.userId === uid && x.date >= r.from && x.date <= r.to)) {
+      get(x.date).exercises += 1;
+    }
+    for (const w of s.weights.filter((x) => x.userId === uid && x.date >= r.from && x.date <= r.to)) {
+      get(w.date).weight = w.weight;
+    }
+    const out: DayHistory[] = [];
+    for (let d = r.from; d <= r.to; d = addDay(d)) {
+      out.push(map.get(d) || { date: d, kcal: 0, protein: 0, carbs: 0, fat: 0, waterMl: 0, exercises: 0, weight: null });
+    }
+    return out;
+  },
+  async exportData() {
+    const s = loadFb();
+    const uid = s.sessionId;
+    const p = uid != null ? s.profiles[uid] : undefined;
+    const u = s.users.find((x) => x.id === uid);
+    return {
+      type: 'kalory-backup', version: 1, exported_at: new Date().toISOString(),
+      user: u ? { id: u.id, name: u.name, email: u.email, provider: u.provider } : null,
+      profile: p?.profile ?? null,
+      targets: p?.targets ?? null,
+      foods: s.foods.filter((x) => x.userId === uid),
+      waters: s.water.filter((x) => x.userId === uid),
+      workouts: s.workouts.filter((x) => x.userId === uid),
+      achievements: s.achievements.filter((x) => x.userId === uid),
+      weights: s.weights.filter((x) => x.userId === uid),
+    };
   },
 };
 
@@ -207,6 +274,20 @@ export function isDesktop(): boolean {
 
 export function todayStr(): string {
   const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+export function addDay(s: string): string {
+  const d = new Date(s + 'T12:00:00');
+  d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export function daysAgo(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${d.getFullYear()}-${m}-${day}`;

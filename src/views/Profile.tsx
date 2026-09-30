@@ -1,11 +1,16 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   UserCheck, ClipboardList, UtensilsCrossed, Droplet, Dumbbell,
-  Trophy, Target, Flame, Pencil, Lock,
+  Trophy, Target, Flame, Pencil, Lock, CalendarCheck, Scale, Camera, Medal, Bell,
+  FileDown, FileUp, Database, FileText,
 } from 'lucide-react';
 import { GlassCard } from '../components/ui';
 import { MEDALS } from '../lib/achievements';
 import { calcBMR } from '../lib/calculations';
+import { loadPrefs, savePrefs, type ReminderPrefs } from '../lib/reminders';
+import { downloadFile, weeklyCSV } from '../lib/report';
+import { daysAgo, getDb, todayStr } from '../lib/db';
 import { useStore } from '../lib/store';
 
 const MEDAL_ICONS: Record<string, typeof Trophy> = {
@@ -17,6 +22,10 @@ const MEDAL_ICONS: Record<string, typeof Trophy> = {
   sesion_completa: Trophy,
   en_meta: Target,
   constancia_3: Flame,
+  racha_7: CalendarCheck,
+  semana_perfecta: Medal,
+  peso_meta: Scale,
+  foto_1: Camera,
 };
 
 const ACT_LABEL: Record<string, string> = {
@@ -37,7 +46,9 @@ function bmiCategory(bmi: number): string {
 }
 
 export default function Profile() {
-  const { profile, targets, achievements, achievementDates } = useStore();
+  const { profile, targets, achievements, achievementDates, history } = useStore();
+  const [prefs, setPrefs] = useState<ReminderPrefs>(() => loadPrefs());
+  const [dbMsg, setDbMsg] = useState('');
   if (!profile || !targets) return null;
 
   const bmi = profile.weightKg / Math.pow(profile.heightCm / 100, 2);
@@ -111,6 +122,96 @@ export default function Profile() {
                 <p className="text-[11px] text-muted">P {targets.protein}g · C {targets.carbs}g · G {targets.fat}g</p>
               </div>
             </div>
+          </GlassCard>
+
+          <GlassCard>
+            <div className="flex items-center gap-2">
+              <Bell size={17} className="text-emerald" />
+              <p className="text-sm font-bold">Recordatorios de Windows</p>
+            </div>
+            <div className="mt-3 flex flex-col gap-2">
+              {([
+                ['water', 'Agua durante el día'],
+                ['meals', 'Comidas (almuerzo y cena)'],
+                ['workout', 'Entrenamiento pendiente'],
+              ] as const).map(([k, label]) => (
+                <button
+                  key={k}
+                  onClick={() => {
+                    const next = { ...prefs, [k]: !prefs[k] };
+                    setPrefs(next);
+                    savePrefs(next);
+                  }}
+                  className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2.5 text-sm"
+                >
+                  <span className={`relative h-5 w-9 shrink-0 rounded-full transition-all ${prefs[k] ? 'bg-emerald' : 'bg-white/10'}`}>
+                    <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${prefs[k] ? 'left-[18px]' : 'left-0.5'}`} />
+                  </span>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] text-muted">Cerrar la ventana minimiza a la bandeja; salir desde el icono.</p>
+          </GlassCard>
+
+          <GlassCard>
+            <div className="flex items-center gap-2">
+              <Database size={17} className="text-fire" />
+              <p className="text-sm font-bold">Informes y copia de seguridad</p>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                onClick={() => {
+                  const week = history.filter((d) => d.date >= daysAgo(6));
+                  downloadFile(`kalory-semana-${todayStr()}.csv`, weeklyCSV(week), 'text/csv');
+                }}
+                className="chip !text-xs flex items-center justify-center gap-1.5 hover:border-emerald/50"
+              >
+                <FileText size={14} /> Semana CSV
+              </button>
+              <Link to="/informe" className="chip !text-xs flex items-center justify-center gap-1.5 hover:border-emerald/50">
+                <FileText size={14} /> Informe / PDF
+              </Link>
+              <button
+                onClick={async () => {
+                  const data = await getDb().exportData();
+                  downloadFile(`kalory-backup-${todayStr()}.json`, JSON.stringify(data), 'application/json');
+                  setDbMsg('Respaldo JSON descargado.');
+                }}
+                className="chip !text-xs flex items-center justify-center gap-1.5 hover:border-emerald/50"
+              >
+                <FileDown size={14} /> Respaldo JSON
+              </button>
+              {typeof window !== 'undefined' && (window as unknown as { kaloryDb?: { backupDb?: () => Promise<string | null>; restoreDb?: () => Promise<boolean> } }).kaloryDb?.backupDb && (
+                <>
+                  <button
+                    onClick={async () => {
+                      const p = await (window as unknown as { kaloryDb: { backupDb: () => Promise<string | null> } }).kaloryDb.backupDb();
+                      setDbMsg(p ? `Copia guardada.` : 'Cancelado.');
+                    }}
+                    className="chip !text-xs flex items-center justify-center gap-1.5 hover:border-emerald/50"
+                  >
+                    <Database size={14} /> Copia .db
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!window.confirm('¿Restaurar copia? Se reemplazarán tus datos actuales.')) return;
+                      try {
+                        const ok = await (window as unknown as { kaloryDb: { restoreDb: () => Promise<boolean> } }).kaloryDb.restoreDb();
+                        if (ok) window.location.reload();
+                        else setDbMsg('Cancelado.');
+                      } catch {
+                        setDbMsg('Archivo inválido: no es una base Kalory.');
+                      }
+                    }}
+                    className="chip !text-xs flex items-center justify-center gap-1.5 hover:border-fire-hot/50 col-span-2"
+                  >
+                    <FileUp size={14} /> Restaurar copia .db
+                  </button>
+                </>
+              )}
+            </div>
+            {dbMsg && <p className="mt-2 text-[11px] text-emerald">{dbMsg}</p>}
           </GlassCard>
 
           <GlassCard glow>

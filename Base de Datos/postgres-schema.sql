@@ -53,5 +53,13 @@ CREATE TABLE IF NOT EXISTS achievement(
   PRIMARY KEY(user_id, id)
 );
 
+CREATE TABLE IF NOT EXISTS weight_log(
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  date DATE NOT NULL,
+  weight DOUBLE PRECISION NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY(user_id, date)
+);
+
 CREATE INDEX IF NOT EXISTS idx_food_user_date ON food_log(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_water_user_date ON water_log(user_id, date);

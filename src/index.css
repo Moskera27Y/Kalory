@@ -55,6 +55,16 @@ body {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
 }
 
+/* Impresión: solo el contenido (para rutina en PDF/papel) */
+@media print {
+  aside, nav, .no-print, .noise { display: none !important; }
+  .app-bg, body { background: #fff !important; }
+  .app-bg::before, .app-bg::after { display: none !important; }
+  main { overflow: visible !important; }
+  .glass, .glass-strong { border: 1px solid #ddd !important; box-shadow: none !important; }
+  body, p, h1, h2, span, div { color: #111 !important; }
+}
+
 /* Scrollbar elegante */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }

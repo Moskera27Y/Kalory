@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Flame, Dumbbell, ChevronRight, Beef, Wheat, Droplet, Plus } from 'lucide-react';
+import { Flame, Dumbbell, ChevronRight, Beef, Wheat, Droplet, Plus, TrendingUp, Trophy } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { GlassCard } from '../components/ui';
 import { ActivityRings, AnimatedCounter, WaterTracker } from '../components/widgets';
 import { useStore } from '../lib/store';
 
 export default function Dashboard() {
-  const { profile, targets, consumed, proteinEaten, carbsEaten, fatEaten, day, logFood, logWater, activeDays } = useStore();
+  const { profile, targets, consumed, proteinEaten, carbsEaten, fatEaten, day, logFood, logWater, activeDays, history, streak } = useStore();
   const target = targets?.calories ?? 0;
   const burned = day.done.length * 90;
   const remaining = Math.max(0, target - consumed);
@@ -40,6 +40,33 @@ export default function Dashboard() {
             <p className="text-sm text-muted">{activeDays} días con actividad · Te faltan <b className="text-white">{remaining.toLocaleString('es')} kcal</b> para tu meta</p>
           )}
         </div>
+
+        {(() => {
+          const nowD = new Date();
+          const dow = (nowD.getDay() + 6) % 7;
+          const mon = new Date(nowD);
+          mon.setDate(nowD.getDate() - dow);
+          const monKey = `${mon.getFullYear()}-${String(mon.getMonth() + 1).padStart(2, '0')}-${String(mon.getDate()).padStart(2, '0')}`;
+          const weekTrainDays = history.filter((h) => h.date >= monKey && h.exercises > 0).length;
+          const goalDays = profile?.daysPerWeek ?? 3;
+          return (
+            <Link to="/progreso">
+              <GlassCard className="flex items-center gap-4 border-emerald/20">
+                <span className="rounded-2xl bg-gradient-to-br from-[#10B981] to-[#059669] p-3 text-white shadow-glow-emerald"><Trophy size={22} /></span>
+                <div className="flex-1">
+                  <p className="font-bold text-sm">Reto semanal · {weekTrainDays}/{goalDays} días con entreno
+                    {streak > 0 && <span className="ml-2 rounded-full bg-fire/15 px-2 py-0.5 text-xs text-fire">🔥 {streak}</span>}
+                  </p>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
+                    <motion.div className="h-full rounded-full bg-gradient-to-r from-[#10B981] to-[#059669]"
+                      initial={{ width: 0 }} animate={{ width: `${Math.min(100, (weekTrainDays / Math.max(1, goalDays)) * 100)}%` }} />
+                  </div>
+                </div>
+                <TrendingUp className="text-muted" size={18} />
+              </GlassCard>
+            </Link>
+          );
+        })()}
 
         <div className="grid gap-4 md:grid-cols-2">
           <GlassCard glow>

@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Dumbbell, Salad, User, Trash2, LogOut } from 'lucide-react';
+import { LayoutDashboard, Dumbbell, Salad, User, Trash2, LogOut, TrendingUp } from 'lucide-react';
 import Logo from './Logo';
 import { useStore } from '../lib/store';
 
@@ -7,6 +7,7 @@ const links = [
   { to: '/', label: 'Panel', icon: LayoutDashboard, end: true },
   { to: '/rutinas', label: 'Rutinas', icon: Dumbbell },
   { to: '/dieta', label: 'Dieta', icon: Salad },
+  { to: '/progreso', label: 'Progreso', icon: TrendingUp },
   { to: '/perfil', label: 'Perfil', icon: User },
 ];
 

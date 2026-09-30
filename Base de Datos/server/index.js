@@ -80,6 +80,13 @@ async function ready() {
       unlocked_at TEXT NOT NULL,
       PRIMARY KEY(user_id, id)
     );
+    CREATE TABLE IF NOT EXISTS weight_log(
+      user_id INTEGER NOT NULL,
+      date TEXT NOT NULL,
+      weight REAL NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY(user_id, date)
+    );
     CREATE INDEX IF NOT EXISTS idx_food_user_date ON food_log(user_id, date);
     CREATE INDEX IF NOT EXISTS idx_water_user_date ON water_log(user_id, date);
   `);
@@ -285,8 +292,91 @@ app.delete('/api/account/data', auth, async (req, res) => {
   run('DELETE FROM water_log WHERE user_id=?', [req.uid]);
   run('DELETE FROM workout_log WHERE user_id=?', [req.uid]);
   run('DELETE FROM achievement WHERE user_id=?', [req.uid]);
+  run('DELETE FROM weight_log WHERE user_id=?', [req.uid]);
   persist();
   res.json({ ok: true });
+});
+
+// ---------- peso ----------
+app.post('/api/weight', auth, async (req, res) => {
+  await ready();
+  run(`INSERT INTO weight_log(user_id,date,weight,created_at) VALUES(?,?,?,?)
+       ON CONFLICT(user_id,date) DO UPDATE SET weight=excluded.weight, created_at=excluded.created_at`,
+    [req.uid, req.body.date, req.body.weight, now()]);
+  persist();
+  res.json({ ok: true });
+});
+
+app.get('/api/weights', auth, async (req, res) => {
+  await ready();
+  const { from = '2000-01-01', to = '2999-12-31' } = req.query;
+  res.json({ ok: true, weights: rows('SELECT date, weight FROM weight_log WHERE user_id=? AND date>=? AND date<=? ORDER BY date', [req.uid, from, to]) });
+});
+
+// ---------- historial agregado por día ----------
+app.get('/api/history', auth, async (req, res) => {
+  await ready();
+  const { from = '2000-01-01', to = '2999-12-31' } = req.query;
+  const days = new Map();
+  const get = (d) => {
+    if (!days.has(d)) days.set(d, { date: d, kcal: 0, protein: 0, carbs: 0, fat: 0, waterMl: 0, exercises: 0, weight: null });
+    return days.get(d);
+  };
+  for (const f of rows('SELECT date, kcal, protein, carbs, fat FROM food_log WHERE user_id=? AND date>=? AND date<=?', [req.uid, from, to])) {
+    const d = get(f.date);
+    d.kcal += f.kcal; d.protein += f.protein; d.carbs += f.carbs; d.fat += f.fat;
+  }
+  for (const w of rows('SELECT date, SUM(ml) AS ml FROM water_log WHERE user_id=? AND date>=? AND date<=? GROUP BY date', [req.uid, from, to])) {
+    get(w.date).waterMl = Math.max(0, w.ml);
+  }
+  for (const x of rows('SELECT date, COUNT(*) AS n FROM workout_log WHERE user_id=? AND date>=? AND date<=? GROUP BY date', [req.uid, from, to])) {
+    get(x.date).exercises = x.n;
+  }
+  for (const p of rows('SELECT date, weight FROM weight_log WHERE user_id=? AND date>=? AND date<=?', [req.uid, from, to])) {
+    get(p.date).weight = p.weight;
+  }
+  // Rellena días vacíos del rango para gráficas continuas
+  const out = [];
+  for (let d = String(from); d <= String(to); d = nextDay(d)) out.push(days.get(d) || { date: d, kcal: 0, protein: 0, carbs: 0, fat: 0, waterMl: 0, exercises: 0, weight: null });
+  res.json({ ok: true, days: out });
+});
+
+function nextDay(s) {
+  const d = new Date(s + 'T12:00:00');
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+// ---------- exportar todo (backup JSON) ----------
+app.get('/api/export', auth, async (req, res) => {
+  await ready();
+  const u = rows('SELECT * FROM users WHERE id=?', [req.uid])[0];
+  const p = rows('SELECT profile_json, targets_json FROM user_profile WHERE user_id=?', [req.uid])[0];
+  res.json({
+    ok: true,
+    backup: {
+      type: 'kalory-backup', version: 1, exported_at: now(),
+      user: pub(u),
+      profile: p ? JSON.parse(p.profile_json) : null,
+      targets: p ? JSON.parse(p.targets_json) : null,
+      foods: rows('SELECT date,name,kcal,protein,carbs,fat,meal,created_at FROM food_log WHERE user_id=? ORDER BY id', [req.uid]),
+      waters: rows('SELECT date,ml,created_at FROM water_log WHERE user_id=? ORDER BY id', [req.uid]),
+      workouts: rows('SELECT date,exercise FROM workout_log WHERE user_id=?', [req.uid]),
+      achievements: rows('SELECT id,unlocked_at FROM achievement WHERE user_id=? ORDER BY unlocked_at', [req.uid]),
+      weights: rows('SELECT date,weight FROM weight_log WHERE user_id=? ORDER BY date', [req.uid]),
+    },
+  });
+});
+
+// ---------- versión (aviso de actualización en la app) ----------
+const APP_VERSION = '1.1.0';
+app.get('/api/version', (req, res) => {
+  res.json({
+    ok: true,
+    version: APP_VERSION,
+    url: 'https://github.com/Moskera27Y/Kalory/releases',
+    notes: 'Descarga la última versión desde la página de releases.',
+  });
 });
 
 // ---------- admin ----------

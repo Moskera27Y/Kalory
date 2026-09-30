@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import type { AuthResult, AuthUser, DayData, MacroTargets, UserProfile } from '../types';
+import type { AuthResult, AuthUser, DayData, DayHistory, MacroTargets, UserProfile, WeightEntry } from '../types';
 import { calcMacros } from './calculations';
-import { getDb, todayStr, type DbApi } from './db';
+import { getDb, todayStr, daysAgo, type DbApi } from './db';
 import { ServerDb, clearServerSession, loadServerUrl, setServerUrlOnly, clearServerOverride } from './serverApi';
 
 interface Store {
@@ -34,6 +34,13 @@ interface Store {
   logWater: (ml: number) => Promise<void>;
   toggleExercise: (exercise: string, sessionSize: number) => Promise<void>;
   resetAll: () => Promise<void>;
+  unlockMedal: (id: string) => Promise<void>;
+  history: DayHistory[];
+  weights: WeightEntry[];
+  streak: number;
+  weekWorkouts: number;
+  refreshHistory: () => Promise<void>;
+  setWeight: (weight: number, date?: string) => Promise<void>;
 }
 
 const Ctx = createContext<Store | null>(null);
@@ -59,6 +66,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [achievementDates, setAchievementDates] = useState<Record<string, string>>({});
   const [activeDays, setActiveDays] = useState(0);
   const [celebration, setCelebration] = useState<string | null>(null);
+  const [history, setHistory] = useState<DayHistory[]>([]);
+  const [weights, setWeights] = useState<WeightEntry[]>([]);
+  const [streak, setStreak] = useState(0);
+  const [weekWorkouts, setWeekWorkouts] = useState(0);
 
   const clearLocal = () => {
     setProfile(null);
@@ -67,6 +78,45 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setAchievements([]);
     setAchievementDates({});
     setActiveDays(0);
+    setHistory([]);
+    setWeights([]);
+    setStreak(0);
+    setWeekWorkouts(0);
+  };
+
+  const isActiveDay = (d: DayHistory) => d.kcal > 0 || d.waterMl > 0 || d.exercises > 0;
+
+  /** Carga historial (30 días), racha, entrenos de la semana y medallas asociadas. */
+  const refreshHistory = async () => {
+    if (!user) return;
+    const to = todayStr();
+    const from = daysAgo(60);
+    const h = await db.getHistory({ from, to });
+    setHistory(h.filter((d) => d.date >= daysAgo(30)));
+    setWeights(await db.getWeights({ from: daysAgo(120), to }));
+    // Racha: días activos consecutivos (hoy puede estar vacío)
+    const desc = [...h].reverse();
+    if (desc.length && !isActiveDay(desc[0])) desc.shift();
+    let s = 0;
+    for (const d of desc) {
+      if (isActiveDay(d)) s++;
+      else break;
+    }
+    setStreak(s);
+    // Entrenos de la semana actual (lunes-domingo)
+    const nowD = new Date();
+    const dow = (nowD.getDay() + 6) % 7;
+    const monday = new Date(nowD);
+    monday.setDate(nowD.getDate() - dow);
+    const mStr = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`;
+    setWeekWorkouts(h.filter((d) => d.date >= mStr).reduce((a, d) => a + d.exercises, 0));
+    let list = achievements;
+    if (s >= 7) list = await unlock('racha_7', list);
+    const weekActive = h.filter((d) => d.date >= mStr && d.exercises > 0).length;
+    if (profile && profile.daysPerWeek > 0 && weekActive >= profile.daysPerWeek) {
+      list = await unlock('semana_perfecta', list);
+    }
+    void list;
   };
 
   const refresh = async () => {
@@ -99,6 +149,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (user && profile) refreshHistory().catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, profile, day.date]);
+
   const afterAuth = async (r: AuthResult): Promise<AuthResult> => {
     if (r.ok) {
       setCelebration(r.user.name);
@@ -109,7 +164,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const dismissCelebration = () => setCelebration(null);
 
-  const register = (u: { name: string; email: string; password: string }) => db.register(u).then(afterAuth);
+  const unlockMedal = async (id: string) => {
+    await unlock(id, achievements);
+  };  const register = (u: { name: string; email: string; password: string }) => db.register(u).then(afterAuth);
   const login = (u: { email: string; password: string }) => db.login(u).then(afterAuth);
   const googleSignIn = () => db.googleSignIn().then(afterAuth);
   const logout = async () => {
@@ -182,11 +239,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     void list;
     const s = await db.stats();
     setActiveDays(s.activeDays);
+    await refreshHistory().catch(() => undefined);
   };
 
   const resetAll = async () => {
     await db.resetAll();
     clearLocal();
+  };
+
+  const setWeight = async (weight: number, date?: string) => {
+    const d = date || todayStr();
+    if (!Number.isFinite(weight) || weight <= 20 || weight > 400) return;
+    await db.setWeight({ date: d, weight });
+    await refreshHistory();
+    const ws = await db.getWeights({ from: '2000-01-01', to: '2999-12-31' });
+    setWeights(ws);
+    if (profile && Math.abs(weight - profile.targetWeightKg) <= 1) {
+      await unlock('peso_meta', achievements);
+    }
   };
 
   const consumed = day.foods.reduce((a, f) => a + f.kcal, 0);
@@ -203,7 +273,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         celebration, dismissCelebration,
         serverUrl, setServerUrl, useOfficialServer,
         register, login, googleSignIn, logout,
-        completeOnboarding, refresh, logFood, deleteFood, logWater, toggleExercise, resetAll,
+        completeOnboarding, refresh, logFood, deleteFood, logWater, toggleExercise, resetAll, unlockMedal,
+        history, weights, streak, weekWorkouts, refreshHistory, setWeight,
       }}
     >
       {children}

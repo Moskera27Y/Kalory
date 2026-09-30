@@ -70,6 +70,22 @@ export interface DayData {
   done: string[];
 }
 
+export interface WeightEntry {
+  date: string;
+  weight: number;
+}
+
+export interface DayHistory {
+  date: string;
+  kcal: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  waterMl: number;
+  exercises: number;
+  weight: number | null;
+}
+
 export interface AuthUser {
   id: number;
   name: string;

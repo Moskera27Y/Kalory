@@ -174,4 +174,24 @@ export class ServerDb implements DbApi {
     await fetch(this.url + '/api/account/data', { method: 'DELETE', headers: { Authorization: 'Bearer ' + this.token } });
     return true;
   }
+
+  async setWeight(w: { date: string; weight: number }) {
+    await req(this.url, this.token, '/api/weight', 'POST', w);
+    return true;
+  }
+
+  async getWeights(r: { from: string; to: string }) {
+    const d = await req<{ weights: import('../types').WeightEntry[] }>(this.url, this.token, `/api/weights?from=${r.from}&to=${r.to}`);
+    return d.weights;
+  }
+
+  async getHistory(r: { from: string; to: string }) {
+    const d = await req<{ days: import('../types').DayHistory[] }>(this.url, this.token, `/api/history?from=${r.from}&to=${r.to}`);
+    return d.days;
+  }
+
+  async exportData() {
+    const d = await req<{ backup: Record<string, unknown> }>(this.url, this.token, '/api/export');
+    return d.backup;
+  }
 }

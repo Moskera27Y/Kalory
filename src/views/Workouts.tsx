@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Pause, RotateCcw, CheckCircle2 } from 'lucide-react';
+import { Play, Pause, RotateCcw, CheckCircle2, X, Printer, Zap } from 'lucide-react';
 import { GlassCard } from '../components/ui';
 import { useStore } from '../lib/store';
 
@@ -23,6 +23,14 @@ const SPLIT_DAY: Exercise[] = [
 ];
 
 const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+const setsCount = (s: string) => {
+  const m = s.match(/(\d+)/);
+  return m ? Math.min(8, Math.max(1, Number(m[1]))) : 3;
+};
+
+function fmt(sec: number) {
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+}
 
 function RestTimer() {
   const [sec, setSec] = useState(90);
@@ -48,7 +56,7 @@ function RestTimer() {
   return (
     <div>
       <div className="flex items-center gap-3 rounded-xl bg-white/5 border border-white/10 px-4 py-3">
-        <span className="font-display text-2xl font-extrabold tabular-nums">{Math.floor(sec / 60)}:{String(sec % 60).padStart(2, '0')}</span>
+        <span className="font-display text-2xl font-extrabold tabular-nums">{fmt(sec)}</span>
         <div className="ml-auto flex gap-2">
           <button onClick={() => setRun(!run)} className="chip !px-3">{run ? <Pause size={15} /> : <Play size={15} />}</button>
           <button onClick={() => { setRun(false); setSec(90); }} className="chip !px-3"><RotateCcw size={15} /></button>
@@ -63,74 +71,247 @@ function RestTimer() {
   );
 }
 
+/** Sesión guiada a pantalla completa: series, descanso automático y avance. */
+function SessionPlayer({ exercises, onDone, onClose }: { exercises: Exercise[]; onDone: (names: string[]) => void; onClose: () => void }) {
+  const [exIdx, setExIdx] = useState(0);
+  const [setNum, setSetNum] = useState(0);
+  const [rest, setRest] = useState(0);
+  const [running, setRunning] = useState(false);
+  const totalSets = setsCount(exercises[exIdx].sets);
+
+  useEffect(() => {
+    if (!running) return;
+    if (rest <= 0) { setRunning(false); return; }
+    const id = window.setInterval(() => setRest((s) => Math.max(0, s - 1)), 1000);
+    return () => window.clearInterval(id);
+  }, [running, rest]);
+
+  const completeSet = () => {
+    if (setNum + 1 >= totalSets) {
+      if (exIdx + 1 >= exercises.length) {
+        onDone(exercises.map((e) => e.name));
+      } else {
+        setExIdx(exIdx + 1);
+        setSetNum(0);
+        setRest(90);
+        setRunning(true);
+      }
+    } else {
+      setSetNum(setNum + 1);
+      setRest(90);
+      setRunning(true);
+    }
+  };
+
+  const e = exercises[exIdx];
+  return (
+    <motion.div className="fixed inset-0 z-50 flex items-center justify-center bg-[#070B16]/95 backdrop-blur-md p-4"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+      <div className="glass w-full max-w-lg p-8 text-center relative">
+        <button onClick={onClose} className="absolute right-4 top-4 text-muted hover:text-white"><X size={20} /></button>
+        <p className="text-xs uppercase tracking-widest text-muted">Ejercicio {exIdx + 1} de {exercises.length}</p>
+        <h2 className="mt-2 font-display text-3xl font-extrabold">{e.name}</h2>
+        <p className="mt-1 text-sm text-fire font-bold">{e.sets} · Serie {setNum + 1} de {totalSets}</p>
+        <p className="mt-2 text-xs text-muted">{e.tip}</p>
+
+        <div className="mt-4 flex justify-center gap-2">
+          {Array.from({ length: totalSets }).map((_, i) => (
+            <span key={i} className={`h-2.5 w-8 rounded-full ${i < setNum ? 'bg-emerald' : i === setNum ? 'bg-fire animate-pulse' : 'bg-white/10'}`} />
+          ))}
+        </div>
+
+        {rest > 0 && running ? (
+          <div className="mt-6">
+            <p className="text-xs uppercase tracking-widest text-muted">Descansa</p>
+            <p className="font-display text-6xl font-extrabold tabular-nums text-gradient-fire">{fmt(rest)}</p>
+            <button onClick={() => { setRunning(false); setRest(0); }} className="chip mt-3 text-sm">Saltar descanso</button>
+          </div>
+        ) : (
+          <motion.button whileTap={{ scale: 0.97 }} onClick={completeSet} className="btn-emerald mt-6 w-full text-lg">
+            {setNum + 1 >= totalSets ? (exIdx + 1 >= exercises.length ? '¡Terminar sesión!' : 'Siguiente ejercicio') : 'Serie completada ✓'}
+          </motion.button>
+        )}
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
+          <div className="h-full bg-gradient-to-r from-[#10B981] to-[#F59E0B]"
+            style={{ width: `${((exIdx + setNum / totalSets) / exercises.length) * 100}%` }} />
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function beep(freq = 880, ms = 180) {
+  try {
+    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new Ctx();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.frequency.value = freq;
+    o.start();
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + ms / 1000);
+    o.stop(ctx.currentTime + ms / 1000);
+  } catch { /* sin audio */ }
+}
+
+/** Temporizador HIIT por intervalos. */
+function HiitTimer() {
+  const [rounds, setRounds] = useState(8);
+  const [work, setWork] = useState(30);
+  const [rest, setRest] = useState(15);
+  const [phase, setPhase] = useState<'idle' | 'work' | 'rest' | 'done'>('idle');
+  const [round, setRound] = useState(1);
+  const [sec, setSec] = useState(0);
+
+  useEffect(() => {
+    if (phase !== 'work' && phase !== 'rest') return;
+    if (sec <= 0) {
+      if (phase === 'work') {
+        beep(660);
+        if (round >= rounds) { setPhase('done'); beep(880, 400); return; }
+        setPhase('rest'); setSec(rest);
+      } else {
+        beep(990);
+        setRound((r) => r + 1);
+        setPhase('work'); setSec(work);
+      }
+      return;
+    }
+    const id = window.setInterval(() => setSec((s) => s - 1), 1000);
+    return () => window.clearInterval(id);
+  }, [phase, sec, round, rounds, work, rest]);
+
+  const start = () => { setRound(1); setPhase('work'); setSec(work); beep(990); };
+  const stop = () => setPhase('idle');
+
+  return (
+    <GlassCard glow>
+      <div className="flex items-center gap-2"><Zap size={17} className="text-fire" /><p className="text-sm font-bold">HIIT por intervalos</p></div>
+      {phase === 'idle' || phase === 'done' ? (
+        <div className="mt-3 grid gap-2">
+          {phase === 'done' && <p className="rounded-xl border border-emerald/40 bg-emerald/10 p-3 text-center text-sm font-bold text-emerald">¡Completado! 🔥</p>}
+          <div className="grid grid-cols-3 gap-2 text-sm">
+            <label className="grid gap-1 text-xs text-muted">Rondas<input type="number" min={1} max={30} value={rounds} onChange={(e) => setRounds(Number(e.target.value))} className="input-kalory !py-2 text-sm" /></label>
+            <label className="grid gap-1 text-xs text-muted">Trabajo (s)<input type="number" min={5} max={300} value={work} onChange={(e) => setWork(Number(e.target.value))} className="input-kalory !py-2 text-sm" /></label>
+            <label className="grid gap-1 text-xs text-muted">Descanso (s)<input type="number" min={5} max={300} value={rest} onChange={(e) => setRest(Number(e.target.value))} className="input-kalory !py-2 text-sm" /></label>
+          </div>
+          <motion.button whileTap={{ scale: 0.97 }} onClick={start} className="btn-fire text-sm flex items-center justify-center gap-2"><Play size={16} /> Empezar HIIT</motion.button>
+        </div>
+      ) : (
+        <div className="mt-3 text-center">
+          <p className={`text-xs font-bold uppercase tracking-widest ${phase === 'work' ? 'text-fire' : 'text-emerald'}`}>
+            {phase === 'work' ? '🔥 ¡Dale!' : '😮‍💨 Recupera'} · Ronda {round}/{rounds}
+          </p>
+          <p className="font-display text-6xl font-extrabold tabular-nums">{fmt(sec)}</p>
+          <div className="mt-2 flex justify-center gap-1.5">
+            {Array.from({ length: rounds }).map((_, i) => (
+              <span key={i} className={`h-2 w-2 rounded-full ${i + 1 < round || (i + 1 === round && phase === 'rest') ? 'bg-emerald' : i + 1 === round ? 'bg-fire animate-pulse' : 'bg-white/10'}`} />
+            ))}
+          </div>
+          <button onClick={stop} className="chip mt-3 text-sm">Detener</button>
+        </div>
+      )}
+    </GlassCard>
+  );
+}
+
 export default function Workouts() {
   const { profile, day, toggleExercise } = useStore();
+  const [tab, setTab] = useState<'rutina' | 'hiit'>('rutina');
+  const [session, setSession] = useState(false);
   const daysPerWeek = profile?.daysPerWeek ?? 3;
   const exercises = daysPerWeek > 3 ? SPLIT_DAY : FULL_BODY;
   const planName = daysPerWeek > 3 ? 'Tren superior / inferior' : 'Cuerpo completo';
   const todayIdx = (new Date().getDay() + 6) % 7;
 
+  const finishSession = async (names: string[]) => {
+    for (const n of names) {
+      if (!day.done.includes(n)) await toggleExercise(n, exercises.length);
+    }
+    setSession(false);
+  };
+
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="font-display text-2xl font-extrabold">Plan de ejercicio <span className="text-gradient-fire">semanal</span></h1>
-        <p className="text-sm text-muted">
-          {planName} · {daysPerWeek} días/semana
-          {profile ? ` · Nivel ${profile.experience} · ${profile.place}` : ''}
-        </p>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div>
+          <h1 className="font-display text-2xl font-extrabold">Plan de ejercicio <span className="text-gradient-fire">semanal</span></h1>
+          <p className="text-sm text-muted">
+            {planName} · {daysPerWeek} días/semana
+            {profile ? ` · Nivel ${profile.experience} · ${profile.place}` : ''}
+          </p>
+        </div>
+        <div className="ml-auto flex gap-2 no-print">
+          <div className="grid grid-cols-2 gap-1 rounded-xl bg-white/5 p-1">
+            <button onClick={() => setTab('rutina')} className={`rounded-lg px-4 py-2 text-xs font-bold ${tab === 'rutina' ? 'bg-emerald/20 text-white' : 'text-muted'}`}>Rutina</button>
+            <button onClick={() => setTab('hiit')} className={`rounded-lg px-4 py-2 text-xs font-bold ${tab === 'hiit' ? 'bg-fire/20 text-white' : 'text-muted'}`}>HIIT</button>
+          </div>
+          <button onClick={() => window.print()} title="Imprimir / guardar PDF" className="chip !py-2 flex items-center gap-1.5 text-xs"><Printer size={14} /> Imprimir</button>
+          <button onClick={() => setSession(true)} className="btn-fire !py-2 text-sm flex items-center gap-2"><Play size={15} /> Iniciar sesión</button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-7 gap-2 max-lg:grid-cols-4 max-sm:grid-cols-2">
-        {DAYS.map((d, i) => {
-          const isTraining = i < daysPerWeek;
-          const isToday = i === todayIdx;
-          return (
-            <GlassCard key={d} className={`!p-3 text-center ${isToday && isTraining ? '!border-fire/50 shadow-glow-fire' : ''}`}>
-              <p className="text-xs font-bold uppercase text-muted">{d}</p>
-              <p className="mt-1 text-xs font-semibold leading-tight">{isTraining ? 'Entreno' : 'Descanso'}</p>
-              <p className={`mt-2 text-[11px] font-bold ${isToday ? 'text-fire' : 'text-muted'}`}>{isToday ? '● Hoy' : '·'}</p>
-            </GlassCard>
-          );
-        })}
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2 flex flex-col gap-3">
-          <AnimatePresence>
-            {exercises.map((e, i) => {
-              const done = day.done.includes(e.name);
+      {tab === 'hiit' ? (
+        <HiitTimer />
+      ) : (
+        <>
+          <div className="grid grid-cols-7 gap-2 max-lg:grid-cols-4 max-sm:grid-cols-2">
+            {DAYS.map((d, i) => {
+              const isTraining = i < daysPerWeek;
+              const isToday = i === todayIdx;
               return (
-                <motion.div key={e.name} layout initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-                  <GlassCard className={`flex items-start gap-4 ${done ? 'opacity-70' : ''}`}>
-                    <button onClick={() => toggleExercise(e.name, exercises.length)} className={`mt-1 transition-all ${done ? 'text-emerald' : 'text-muted hover:text-white'}`}>
-                      <CheckCircle2 size={24} fill={done ? 'rgba(16,185,129,0.2)' : 'transparent'} />
-                    </button>
-                    <div className="flex-1">
-                      <p className={`font-bold ${done ? 'line-through' : ''}`}>{i + 1}. {e.name}</p>
-                      <p className="text-xs font-semibold text-fire">{e.sets}</p>
-                      <p className="mt-1 text-xs text-muted">{e.tip}</p>
-                    </div>
-                  </GlassCard>
-                </motion.div>
+                <GlassCard key={d} className={`!p-3 text-center ${isToday && isTraining ? '!border-fire/50 shadow-glow-fire' : ''}`}>
+                  <p className="text-xs font-bold uppercase text-muted">{d}</p>
+                  <p className="mt-1 text-xs font-semibold leading-tight">{isTraining ? 'Entreno' : 'Descanso'}</p>
+                  <p className={`mt-2 text-[11px] font-bold ${isToday ? 'text-fire' : 'text-muted'}`}>{isToday ? '● Hoy' : '·'}</p>
+                </GlassCard>
               );
             })}
-          </AnimatePresence>
-        </div>
-        <div className="flex flex-col gap-4">
-          <GlassCard glow>
-            <p className="text-xs uppercase tracking-widest text-muted">Temporizador de descanso</p>
-            <div className="mt-3"><RestTimer /></div>
-          </GlassCard>
-          <GlassCard>
-            <p className="text-sm font-bold">Progreso de hoy</p>
-            <p className="font-display text-3xl font-extrabold text-gradient-emerald">{Math.round((day.done.length / exercises.length) * 100)}%</p>
-            <div className="mt-2 h-2 rounded-full bg-white/10 overflow-hidden">
-              <motion.div className="h-full bg-gradient-to-r from-[#10B981] to-[#059669]" animate={{ width: `${(day.done.length / exercises.length) * 100}%` }} />
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="lg:col-span-2 flex flex-col gap-3">
+              <AnimatePresence>
+                {exercises.map((e, i) => {
+                  const done = day.done.includes(e.name);
+                  return (
+                    <motion.div key={e.name} layout initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
+                      <GlassCard className={`flex items-start gap-4 ${done ? 'opacity-70' : ''}`}>
+                        <button onClick={() => toggleExercise(e.name, exercises.length)} className={`mt-1 transition-all no-print ${done ? 'text-emerald' : 'text-muted hover:text-white'}`}>
+                          <CheckCircle2 size={24} fill={done ? 'rgba(16,185,129,0.2)' : 'transparent'} />
+                        </button>
+                        <div className="flex-1">
+                          <p className={`font-bold ${done ? 'line-through' : ''}`}>{i + 1}. {e.name}</p>
+                          <p className="text-xs font-semibold text-fire">{e.sets}</p>
+                          <p className="mt-1 text-xs text-muted">{e.tip}</p>
+                        </div>
+                      </GlassCard>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
             </div>
-            <p className="mt-2 text-xs text-muted">{day.done.length} de {exercises.length} ejercicios</p>
-          </GlassCard>
-        </div>
-      </div>
+            <div className="flex flex-col gap-4 no-print">
+              <GlassCard glow>
+                <p className="text-xs uppercase tracking-widest text-muted">Temporizador de descanso</p>
+                <div className="mt-3"><RestTimer /></div>
+              </GlassCard>
+              <GlassCard>
+                <p className="text-sm font-bold">Progreso de hoy</p>
+                <p className="font-display text-3xl font-extrabold text-gradient-emerald">{Math.round((day.done.length / exercises.length) * 100)}%</p>
+                <div className="mt-2 h-2 rounded-full bg-white/10 overflow-hidden">
+                  <motion.div className="h-full bg-gradient-to-r from-[#10B981] to-[#059669]" animate={{ width: `${(day.done.length / exercises.length) * 100}%` }} />
+                </div>
+                <p className="mt-2 text-xs text-muted">{day.done.length} de {exercises.length} ejercicios</p>
+              </GlassCard>
+            </div>
+          </div>
+        </>
+      )}
+
+      <AnimatePresence>
+        {session && <SessionPlayer exercises={exercises} onDone={finishSession} onClose={() => setSession(false)} />}
+      </AnimatePresence>
     </div>
   );
 }
