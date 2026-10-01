@@ -58,19 +58,19 @@ export default function Welcome() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto grid min-h-full max-w-6xl items-center gap-10 px-6 py-10 lg:grid-cols-2">
+      <div className="mx-auto grid min-h-full max-w-6xl items-center gap-6 px-4 py-6 sm:gap-10 sm:px-6 sm:py-10 lg:grid-cols-2">
         {/* Hero */}
         <motion.div initial={{ opacity: 0, x: -32 }} animate={{ opacity: 1, x: 0 }} transition={{ type: 'spring', stiffness: 120, damping: 20 }}>
-          <Logo size={54} />
-          <h1 className="mt-8 font-display text-5xl font-extrabold leading-[1.05] tracking-tight">
+          <Logo size={44} />
+          <h1 className="mt-5 font-display text-4xl font-extrabold leading-[1.05] tracking-tight sm:mt-8 sm:text-5xl">
             Tu energía,<br />
             <span className="text-gradient-emerald">tu progreso.</span>
           </h1>
-          <p className="mt-4 max-w-md text-lg text-muted">
+          <p className="mt-3 max-w-md text-base text-muted sm:mt-4 sm:text-lg">
             Entrena, come y avanza con un plan hecho a tu medida.
             Registra tu día, completa tus rutinas y colecciona medallas.
           </p>
-          <div className="mt-8 flex flex-col gap-3">
+          <div className="mt-5 hidden sm:mt-8 sm:flex sm:flex-col sm:gap-3">
             {FEATURES.map((f, i) => (
               <motion.div key={f.title} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 + i * 0.1 }}
                 className="glass flex items-center gap-4 p-4">
@@ -86,7 +86,7 @@ export default function Welcome() {
 
         {/* Auth card */}
         <motion.div initial={{ opacity: 0, x: 32 }} animate={{ opacity: 1, x: 0 }} transition={{ type: 'spring', stiffness: 120, damping: 20, delay: 0.1 }}
-          className="glass card-glow-emerald w-full max-w-md justify-self-center p-8 lg:justify-self-end">
+          className="glass card-glow-emerald w-full max-w-md justify-self-center p-5 sm:p-8 lg:justify-self-end">
           <div className="grid grid-cols-2 gap-1 rounded-xl bg-white/5 p-1">
             {(['login', 'register'] as const).map((t) => (
               <button key={t} onClick={() => { setTab(t); setError(''); }}

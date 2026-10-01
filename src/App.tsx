@@ -72,7 +72,7 @@ function AnimatedRoutes() {
     <div className="relative flex h-full gap-0">
       <Sidebar />
       <VersionBanner />
-      <main className="relative flex-1 overflow-y-auto p-4 md:p-6 pb-24 md:pb-6">
+      <main className="relative flex-1 overflow-y-auto p-4 md:p-6 pb-32 md:pb-6">
         <AnimatePresence mode="wait">
           <Routes location={location} key={location.pathname}>
             <Route path="/" element={<PageTransition><Dashboard /></PageTransition>} />
@@ -107,7 +107,7 @@ function AnimatedRoutes() {
 function Shell() {
   const [splash, setSplash] = useState(true);
   useEffect(() => {
-    const t = setTimeout(() => setSplash(false), 2100);
+    const t = setTimeout(() => setSplash(false), 1600);
     return () => clearTimeout(t);
   }, []);
   return (

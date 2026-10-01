@@ -79,8 +79,8 @@ export default function Onboarding({ mode = 'first' }: { mode?: 'first' | 'edit'
   const macrosPreview = calcMacros(form);
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-3xl px-6 py-8">
+    <div className="onboarding h-full overflow-y-auto">
+      <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
         <div className="flex items-center justify-between">
           <Logo size={36} />
           <span className="text-xs text-muted">Paso {step + 1} / 7 · {steps[step]}</span>
@@ -123,7 +123,7 @@ export default function Onboarding({ mode = 'first' }: { mode?: 'first' | 'edit'
                   <h2 className="font-display text-3xl font-extrabold">Tus <span className="text-gradient-emerald">medidas</span></h2>
                   <p className="mt-2 text-muted">Punto de partida y meta para medir tu progreso.</p>
                   <div className="glass mt-6 grid gap-4 p-6">
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <label className="grid gap-1.5 text-sm text-muted">Peso actual (kg)
                         <input type="number" min={30} max={300} className="input-kalory" value={form.weightKg} onChange={(e) => set('weightKg', Number(e.target.value))} />
                       </label>
@@ -165,7 +165,7 @@ export default function Onboarding({ mode = 'first' }: { mode?: 'first' | 'edit'
                   <h2 className="font-display text-3xl font-extrabold">Tu <span className="text-gradient-fire">entrenamiento</span></h2>
                   <p className="mt-2 text-muted">Así ajustamos el plan semanal a tu realidad.</p>
                   <p className="mt-5 text-xs uppercase tracking-widest text-muted">Experiencia</p>
-                  <div className="mt-2 grid grid-cols-3 gap-3">
+                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
                     {experiences.map((e) => (
                       <button key={e.id} onClick={() => set('experience', e.id)}
                         className={`glass p-4 text-left ${form.experience === e.id ? 'border-emerald/60 shadow-glow-emerald' : ''}`}>
@@ -174,14 +174,14 @@ export default function Onboarding({ mode = 'first' }: { mode?: 'first' | 'edit'
                     ))}
                   </div>
                   <p className="mt-5 text-xs uppercase tracking-widest text-muted">Días disponibles por semana</p>
-                  <div className="mt-2 flex gap-2">
+                  <div className="mt-2 flex flex-wrap gap-2">
                     {[1, 2, 3, 4, 5, 6, 7].map((d) => (
                       <button key={d} onClick={() => set('daysPerWeek', d)}
                         className={`chip flex-1 !px-0 text-center ${form.daysPerWeek === d ? 'border-fire/60 bg-fire/15 text-white shadow-glow-fire' : 'text-muted'}`}>{d}</button>
                     ))}
                   </div>
                   <p className="mt-5 text-xs uppercase tracking-widest text-muted">¿Dónde entrenas?</p>
-                  <div className="mt-2 grid grid-cols-3 gap-3">
+                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
                     {places.map((p) => (
                       <button key={p.id} onClick={() => set('place', p.id)}
                         className={`glass flex items-center justify-center gap-2 p-4 text-sm font-bold ${form.place === p.id ? 'border-emerald/60 shadow-glow-emerald' : 'text-muted'}`}>
@@ -225,7 +225,7 @@ export default function Onboarding({ mode = 'first' }: { mode?: 'first' | 'edit'
                     </label>
                     <div>
                       <p className="text-sm text-muted">¿Cuántas comidas haces al día?</p>
-                      <div className="mt-2 flex gap-2">
+                      <div className="mt-2 flex flex-wrap gap-2">
                         {[2, 3, 4, 5, 6].map((n) => (
                           <button key={n} onClick={() => set('mealsPerDay', n)}
                             className={`chip flex-1 !px-0 text-center ${form.mealsPerDay === n ? 'border-emerald/60 bg-emerald/15 text-white' : 'text-muted'}`}>{n}</button>
@@ -253,7 +253,7 @@ export default function Onboarding({ mode = 'first' }: { mode?: 'first' | 'edit'
                         <div className="rounded-xl bg-white/5 p-4"><p className="text-xs text-muted">Gasto total</p><p className="text-xl font-extrabold">{preview.tdee}</p><p className="text-[11px] text-muted">kcal/día</p></div>
                         <div className="rounded-xl border border-fire/40 bg-fire/10 p-4"><p className="text-xs text-fire">Meta diaria</p><p className="text-xl font-extrabold text-gradient-fire">{preview.target}</p><p className="text-[11px] text-muted">kcal/día</p></div>
                       </div>
-                      <div className="mx-auto mt-3 grid max-w-lg grid-cols-4 gap-3 text-sm">
+                      <div className="mx-auto mt-3 grid max-w-lg grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
                         <div className="rounded-xl bg-white/5 p-3"><p className="text-[11px] text-muted">Proteína</p><p className="font-extrabold">{macrosPreview.protein}g</p></div>
                         <div className="rounded-xl bg-white/5 p-3"><p className="text-[11px] text-muted">Carbos</p><p className="font-extrabold">{macrosPreview.carbs}g</p></div>
                         <div className="rounded-xl bg-white/5 p-3"><p className="text-[11px] text-muted">Grasas</p><p className="font-extrabold">{macrosPreview.fat}g</p></div>

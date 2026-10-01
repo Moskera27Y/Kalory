@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   UserCheck, ClipboardList, UtensilsCrossed, Droplet, Dumbbell,
   Trophy, Target, Flame, Pencil, Lock, CalendarCheck, Scale, Camera, Medal, Bell,
-  FileDown, FileUp, Database, FileText, MoonStar, Hourglass,
+  FileDown, FileUp, Database, FileText, MoonStar, Hourglass, LogOut,
 } from 'lucide-react';
 import { GlassCard } from '../components/ui';
 import { MEDALS } from '../lib/achievements';
@@ -48,7 +48,7 @@ function bmiCategory(bmi: number): string {
 }
 
 export default function Profile() {
-  const { profile, targets, achievements, achievementDates, history } = useStore();
+  const { profile, targets, achievements, achievementDates, history, logout } = useStore();
   const [prefs, setPrefs] = useState<ReminderPrefs>(() => loadPrefs());
   const [dbMsg, setDbMsg] = useState('');
   if (!profile || !targets) return null;
@@ -79,11 +79,16 @@ export default function Profile() {
         <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-[#10B981] to-[#059669] font-display text-2xl font-extrabold text-white shadow-glow-emerald">
           {profile.name.charAt(0).toUpperCase()}
         </span>
-        <div className="flex-1">
-          <h1 className="font-display text-2xl font-extrabold">{profile.name}</h1>
+        <div className="flex-1 min-w-0">
+          <h1 className="font-display text-2xl font-extrabold truncate">{profile.name}</h1>
           <p className="text-sm text-muted">{GOAL_LABEL[profile.goal]} · Meta {targets.calories.toLocaleString('es')} kcal/día</p>
         </div>
-        <Link to="/onboarding" className="btn-emerald !py-2.5 text-sm flex items-center gap-2"><Pencil size={15} /> Editar perfil</Link>
+        <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+          <Link to="/onboarding" className="btn-emerald !py-2 !px-3 text-sm flex items-center justify-center gap-2"><Pencil size={15} /> Editar</Link>
+          <button onClick={() => { if (window.confirm('¿Cerrar sesión?')) logout(); }} className="chip !py-2 !text-sm flex items-center justify-center gap-2 text-muted hover:text-fire-hot">
+            <LogOut size={15} /> Salir
+          </button>
+        </div>
       </GlassCard>
 
       <div className="grid gap-4 lg:grid-cols-2">

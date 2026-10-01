@@ -5,9 +5,9 @@ import Logo from './Logo';
 export default function SplashScreen() {
   return (
     <motion.div
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center"
-      exit={{ opacity: 0, scale: 1.06, filter: 'blur(8px)' }}
-      transition={{ duration: 0.5 }}
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center pointer-events-none"
+      exit={{ opacity: 0, scale: 1.12, filter: 'blur(10px)' }}
+      transition={{ duration: 0.35, ease: 'easeIn' }}
     >
       <div className="relative flex items-center justify-center">
         {/* anillo cónico giratorio */}

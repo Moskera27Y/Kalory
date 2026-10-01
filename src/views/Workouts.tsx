@@ -14,6 +14,15 @@ const FULL_BODY: Exercise[] = [
   { name: 'Plancha abdominal', sets: '3 × 45s', tip: 'Cuerpo recto, glúteo y abdomen activos.' },
 ];
 
+/** Semana 1 para principiantes: cardio + peso corporal, cero máquinas. */
+const FOUNDATION: Exercise[] = [
+  { name: 'Caminata enérgica', sets: '15 min', tip: 'Ritmo que te acelere la respiración pero te deje hablar.' },
+  { name: 'Sentadilla libre (sin peso)', sets: '3 × 12', tip: 'Pies al ancho de hombros, espalda recta, baja controlado.' },
+  { name: 'Flexiones inclinadas', sets: '3 × 8', tip: 'Manos en una silla o mesa, cuerpo recto de cabeza a talones.' },
+  { name: 'Plancha abdominal', sets: '3 × 30s', tip: 'Codos bajo hombros, aprieta abdomen y glúteos.' },
+  { name: 'Movilidad total', sets: '5 min', tip: 'Círculos de cadera, hombros y tobillos, suaves y amplios.' },
+];
+
 const SPLIT_DAY: Exercise[] = [
   { name: 'Sentadilla búlgara', sets: '3 × 10 / pierna', tip: 'Torso erguido, rodilla trasera casi al suelo.' },
   { name: 'Hip thrust', sets: '4 × 12', tip: 'Aprieta el glúteo 1s arriba.' },
@@ -269,8 +278,9 @@ export default function Workouts() {
   const [tab, setTab] = useState<'rutina' | 'hiit'>('rutina');
   const [session, setSession] = useState(false);
   const daysPerWeek = profile?.daysPerWeek ?? 3;
-  const exercises = daysPerWeek > 3 ? SPLIT_DAY : FULL_BODY;
-  const planName = daysPerWeek > 3 ? 'Tren superior / inferior' : 'Cuerpo completo';
+  const isBeginner = profile?.experience === 'principiante';
+  const exercises = isBeginner ? FOUNDATION : daysPerWeek > 3 ? SPLIT_DAY : FULL_BODY;
+  const planName = isBeginner ? 'Semana 1 · Acondicionamiento' : daysPerWeek > 3 ? 'Tren superior / inferior' : 'Cuerpo completo';
   const todayIdx = (new Date().getDay() + 6) % 7;
 
   const finishSession = async (names: string[]) => {
@@ -289,6 +299,11 @@ export default function Workouts() {
             {planName} · {daysPerWeek} días/semana
             {profile ? ` · Nivel ${profile.experience} · ${profile.place}` : ''}
           </p>
+          {isBeginner && (
+            <p className="mt-2 rounded-xl border border-emerald/30 bg-emerald/10 px-4 py-2.5 text-xs text-emerald">
+              🌱 Primera semana: solo cardio y peso corporal, sin máquinas ni peso. Cuando completes 4+ sesiones, cambia tu nivel a <b>Intermedio</b> en Perfil.
+            </p>
+          )}
         </div>
         <div className="ml-auto flex gap-2 no-print">
           <div className="grid grid-cols-2 gap-1 rounded-xl bg-white/5 p-1">

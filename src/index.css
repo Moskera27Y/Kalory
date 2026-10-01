@@ -107,6 +107,12 @@ body {
 ::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 8px; border: 2px solid #0f172a; }
 ::-webkit-scrollbar-thumb:hover { background: #059669; }
 
+/* Onboarding en pantallas pequeñas: títulos y tarjetas compactas */
+@media (max-width: 640px) {
+  .onboarding h2 { font-size: 1.5rem !important; line-height: 1.2; }
+  .onboarding .glass { padding: 1rem !important; }
+}
+
 /* Móvil (Capacitor/WebView): áreas seguras, sin rebote ni resaltado táctil */
 @media (pointer: coarse) {
   body {
