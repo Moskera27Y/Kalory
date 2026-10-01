@@ -369,7 +369,7 @@ app.get('/api/export', auth, async (req, res) => {
 });
 
 // ---------- versión (aviso de actualización en la app) ----------
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 app.get('/api/version', (req, res) => {
   res.json({
     ok: true,

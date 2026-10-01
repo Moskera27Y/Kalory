@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   UserCheck, ClipboardList, UtensilsCrossed, Droplet, Dumbbell,
   Trophy, Target, Flame, Pencil, Lock, CalendarCheck, Scale, Camera, Medal, Bell,
-  FileDown, FileUp, Database, FileText,
+  FileDown, FileUp, Database, FileText, MoonStar, Hourglass,
 } from 'lucide-react';
 import { GlassCard } from '../components/ui';
 import { MEDALS } from '../lib/achievements';
@@ -26,6 +26,8 @@ const MEDAL_ICONS: Record<string, typeof Trophy> = {
   semana_perfecta: Medal,
   peso_meta: Scale,
   foto_1: Camera,
+  ayuno_1: MoonStar,
+  ayuno_7: Hourglass,
 };
 
 const ACT_LABEL: Record<string, string> = {

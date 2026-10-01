@@ -17,4 +17,6 @@ export const MEDALS: Medal[] = [
   { id: 'semana_perfecta', name: 'Semana perfecta', desc: 'Entrenaste todos tus días de la semana' },
   { id: 'peso_meta', name: 'Peso objetivo', desc: 'Llegaste a tu peso meta (±1 kg)' },
   { id: 'foto_1', name: 'Evidencia', desc: 'Guardaste tu primera foto de progreso' },
+  { id: 'ayuno_1', name: 'Primer ayuno', desc: 'Completaste tu primer ayuno' },
+  { id: 'ayuno_7', name: 'Maestro del ayuno', desc: 'Completaste 7 ayunos' },
 ];

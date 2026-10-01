@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { HashRouter, Routes, Route, Navigate, useLocation, NavLink } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { LayoutDashboard, Dumbbell, Salad, User } from 'lucide-react';
 import SplashScreen from './components/SplashScreen';
 import LoginCelebration from './components/LoginCelebration';
+import AmbientCanvas from './components/AmbientCanvas';
 import Sidebar from './components/Sidebar';
 import { PageTransition } from './components/ui';
 import Welcome from './views/Welcome';
@@ -37,29 +38,6 @@ function VersionBanner() {
   );
 }
 import { StoreProvider, useStore } from './lib/store';
-
-/** Resplandores ambientales animados con los colores del logo */
-function Aurora() {
-  return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
-      <motion.div
-        className="absolute -top-32 -left-24 h-[420px] w-[420px] rounded-full bg-emerald/20 blur-[120px]"
-        animate={{ x: [0, 60, 0], y: [0, 40, 0] }}
-        transition={{ repeat: Infinity, duration: 22, ease: 'easeInOut' }}
-      />
-      <motion.div
-        className="absolute top-1/3 -right-28 h-[460px] w-[460px] rounded-full bg-fire/15 blur-[130px]"
-        animate={{ x: [0, -70, 0], y: [0, 50, 0] }}
-        transition={{ repeat: Infinity, duration: 26, ease: 'easeInOut' }}
-      />
-      <motion.div
-        className="absolute -bottom-40 left-1/3 h-[380px] w-[520px] rounded-full bg-fire-hot/10 blur-[130px]"
-        animate={{ x: [0, 50, 0] }}
-        transition={{ repeat: Infinity, duration: 30, ease: 'easeInOut' }}
-      />
-    </div>
-  );
-}
 
 function AnimatedRoutes() {
   const location = useLocation();
@@ -103,7 +81,6 @@ function AnimatedRoutes() {
             <Route path="/perfil" element={<PageTransition><Profile /></PageTransition>} />
             <Route path="/progreso" element={<PageTransition><Progress /></PageTransition>} />
             <Route path="/informe" element={<PageTransition><Informe /></PageTransition>} />
-            <Route path="/progreso" element={<PageTransition><Progress /></PageTransition>} />
             <Route path="/onboarding" element={<PageTransition><Onboarding mode="edit" /></PageTransition>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
@@ -135,7 +112,7 @@ function Shell() {
   }, []);
   return (
     <div className="app-bg h-screen w-screen overflow-hidden text-mist">
-      <Aurora />
+      <AmbientCanvas />
       <div className="noise" aria-hidden />
       <div className="relative z-10 h-full">
         <AnimatePresence>{splash && <SplashScreen key="splash" />}</AnimatePresence>

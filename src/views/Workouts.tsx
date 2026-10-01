@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Pause, RotateCcw, CheckCircle2, X, Printer, Zap } from 'lucide-react';
+import { Play, Pause, RotateCcw, CheckCircle2, X, Printer, Zap, Star, PartyPopper } from 'lucide-react';
 import { GlassCard } from '../components/ui';
 import { useStore } from '../lib/store';
 
@@ -77,6 +77,9 @@ function SessionPlayer({ exercises, onDone, onClose }: { exercises: Exercise[]; 
   const [setNum, setSetNum] = useState(0);
   const [rest, setRest] = useState(0);
   const [running, setRunning] = useState(false);
+  const [summary, setSummary] = useState(false);
+  const [rating, setRating] = useState(0);
+  const startRef = useRef(Date.now());
   const totalSets = setsCount(exercises[exIdx].sets);
 
   useEffect(() => {
@@ -89,7 +92,8 @@ function SessionPlayer({ exercises, onDone, onClose }: { exercises: Exercise[]; 
   const completeSet = () => {
     if (setNum + 1 >= totalSets) {
       if (exIdx + 1 >= exercises.length) {
-        onDone(exercises.map((e) => e.name));
+        setSummary(true);
+        setRunning(false);
       } else {
         setExIdx(exIdx + 1);
         setSetNum(0);
@@ -104,6 +108,51 @@ function SessionPlayer({ exercises, onDone, onClose }: { exercises: Exercise[]; 
   };
 
   const e = exercises[exIdx];
+  if (summary) {
+    const mins = Math.max(1, Math.round((Date.now() - startRef.current) / 60000));
+    return (
+      <motion.div className="fixed inset-0 z-50 flex items-center justify-center bg-[#070B16]/95 backdrop-blur-md p-4"
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+        <motion.div className="glass card-glow-emerald w-full max-w-md p-8 text-center relative overflow-hidden"
+          initial={{ scale: 0.85, y: 30 }} animate={{ scale: 1, y: 0 }} transition={{ type: 'spring', stiffness: 200, damping: 20 }}>
+          {[0, 1, 2].map((i) => (
+            <motion.span key={i}
+              className={`absolute h-40 w-40 rounded-full blur-2xl ${i === 0 ? 'bg-emerald/25 -top-10 -left-10' : i === 1 ? 'bg-fire/20 top-1/3 -right-10' : 'bg-fire-hot/15 -bottom-10 left-1/4'}`}
+              animate={{ opacity: [0.5, 1, 0.5], scale: [0.9, 1.1, 0.9] }}
+              transition={{ repeat: Infinity, duration: 2.5, delay: i * 0.4 }} />
+          ))}
+          <motion.span
+            initial={{ scale: 0, rotate: -20 }} animate={{ scale: 1, rotate: 0 }}
+            transition={{ type: 'spring', stiffness: 220, damping: 14, delay: 0.15 }}
+            className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-[#F59E0B] to-[#EF4444] text-white shadow-glow-fire"
+          >
+            <PartyPopper size={34} />
+          </motion.span>
+          <h2 className="relative mt-4 font-display text-3xl font-extrabold">¡Sesión <span className="text-gradient-emerald">completa</span>!</h2>
+          <div className="relative mt-4 grid grid-cols-3 gap-2 text-center">
+            {[['Tiempo', `${mins} min`], ['Ejercicios', `${exercises.length}`], ['Quema est.', `${exercises.length * 90}`]].map(([k, v]) => (
+              <div key={k} className="rounded-xl bg-white/5 border border-white/10 p-3">
+                <p className="text-[11px] text-muted">{k}</p>
+                <p className="font-display text-lg font-extrabold">{v}</p>
+              </div>
+            ))}
+          </div>
+          <p className="relative mt-4 text-xs uppercase tracking-widest text-muted">¿Cómo te sentiste?</p>
+          <div className="relative mt-1 flex justify-center gap-1.5">
+            {[1, 2, 3, 4, 5].map((s) => (
+              <motion.button key={s} whileTap={{ scale: 1.3 }} onClick={() => setRating(s)}>
+                <Star size={30} className={s <= rating ? 'text-fire fill-fire' : 'text-muted'} fill={s <= rating ? 'currentColor' : 'none'} />
+              </motion.button>
+            ))}
+          </div>
+          <motion.button whileTap={{ scale: 0.97 }} onClick={() => onDone(exercises.map((x) => x.name))}
+            className="btn-emerald relative mt-5 w-full">
+            Guardar y terminar
+          </motion.button>
+        </motion.div>
+      </motion.div>
+    );
+  }
   return (
     <motion.div className="fixed inset-0 z-50 flex items-center justify-center bg-[#070B16]/95 backdrop-blur-md p-4"
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>

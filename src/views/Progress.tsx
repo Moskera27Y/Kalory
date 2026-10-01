@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { TrendingDown, Flame, Droplet, Dumbbell, Scale, ChevronLeft, ChevronRight, Camera, Trash2, Columns2 } from 'lucide-react';
+import { TrendingDown, Flame, Droplet, Dumbbell, Scale, ChevronLeft, ChevronRight, Camera, Trash2, Columns2, CalendarDays, Award } from 'lucide-react';
 import { GlassCard } from '../components/ui';
 import { useStore } from '../lib/store';
 import { todayStr } from '../lib/db';
 import { addPhoto, deletePhoto, listPhotos, type ProgressPhoto } from '../lib/photos';
+import { totalFastedHours } from '../lib/fasting';
 import type { DayHistory } from '../types';
 
 function Bars({ data, getValue, format, color, target }: {
@@ -78,6 +79,7 @@ function WeightLine({ data, target }: { data: DayHistory[]; target: number }) {
 
 export default function Progress() {
   const { history, profile, targets, setWeight, streak, weekWorkouts, user, unlockMedal } = useStore();
+  const [monthShift, setMonthShift] = useState(0);
   const [range, setRange] = useState<14 | 30>(14);
   const [weightInput, setWeightInput] = useState('');
   const [weekOffset, setWeekOffset] = useState(0);
@@ -140,6 +142,73 @@ export default function Progress() {
           </GlassCard>
         ))}
       </div>
+
+      <GlassCard glow>
+        <div className="flex items-center gap-2">
+          <Award size={17} className="text-fire" />
+          <p className="text-sm font-bold">Récords personales</p>
+        </div>
+        <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+          {(() => {
+            let best = 0, cur = 0;
+            for (const d of history) {
+              if (d.kcal > 0 || d.waterMl > 0 || d.exercises > 0) { cur++; best = Math.max(best, cur); }
+              else cur = 0;
+            }
+            let bestDay: DayHistory | null = null;
+            for (const d of history) if (!bestDay || d.kcal > bestDay.kcal) bestDay = d;
+            const totEx = history.reduce((a, d) => a + d.exercises, 0);
+            return [
+              ['Mejor racha', `${best} días`],
+              ['Día top kcal', bestDay && bestDay.kcal > 0 ? `${Math.round(bestDay.kcal)} · ${bestDay.date.slice(5)}` : '—'],
+              ['Ejercicios (60d)', `${totEx}`],
+              ['Horas de ayuno', `${Math.round(totalFastedHours(user?.id ?? 0))} h`],
+            ].map(([k, v]) => (
+              <div key={k} className="rounded-xl bg-white/[0.04] border border-white/5 p-3">
+                <p className="text-[11px] text-muted">{k}</p>
+                <p className="font-display text-lg font-extrabold">{v}</p>
+              </div>
+            ));
+          })()}
+        </div>
+      </GlassCard>
+
+      <GlassCard>
+        <div className="flex items-center gap-2">
+          <CalendarDays size={17} className="text-emerald" />
+          <p className="text-sm font-bold">Calendario</p>
+          <div className="ml-auto flex gap-1">
+            <button onClick={() => setMonthShift((o) => o - 1)} className="chip !p-1.5"><ChevronLeft size={15} /></button>
+            <button onClick={() => setMonthShift(0)} className={`chip !py-1.5 !text-xs ${monthShift === 0 ? 'border-emerald/50 text-emerald' : 'text-muted'}`}>
+              {(() => { const d = new Date(); d.setMonth(d.getMonth() + monthShift); return d.toLocaleDateString('es', { month: 'long', year: 'numeric' }); })()}
+            </button>
+            <button onClick={() => setMonthShift((o) => Math.min(0, o + 1))} disabled={monthShift >= 0} className="chip !p-1.5 disabled:opacity-30"><ChevronRight size={15} /></button>
+          </div>
+        </div>
+        {(() => {
+          const base = new Date();
+          base.setMonth(base.getMonth() + monthShift, 1);
+          const startOffset = (base.getDay() + 6) % 7;
+          const dim = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
+          const active = new Set(history.filter((d) => d.kcal > 0 || d.waterMl > 0 || d.exercises > 0).map((d) => d.date));
+          const cells: (string | null)[] = [...Array<string | null>(startOffset).fill(null)];
+          for (let d = 1; d <= dim; d++) {
+            cells.push(`${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+          }
+          const todayK = todayStr();
+          return (
+            <div className="mt-3 grid grid-cols-7 gap-1 text-center">
+              {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((l) => <p key={l} className="text-[10px] font-bold text-muted">{l}</p>)}
+              {cells.map((c, i) => c === null ? <span key={`e${i}`} /> : (
+                <span key={c}
+                  className={`rounded-lg py-1.5 text-[11px] font-bold ${active.has(c) ? 'bg-gradient-to-br from-[#10B981]/40 to-[#F59E0B]/30 text-white' : 'text-muted/50'} ${c === todayK ? 'ring-1 ring-fire' : ''}`}>
+                  {Number(c.slice(8))}
+                </span>
+              ))}
+            </div>
+          );
+        })()}
+      </GlassCard>
 
       <GlassCard glow>
         <div className="flex items-center gap-2">

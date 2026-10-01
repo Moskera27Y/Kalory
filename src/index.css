@@ -65,6 +65,42 @@ body {
   body, p, h1, h2, span, div { color: #111 !important; }
 }
 
+/* Shimmer de carga (skeletons) */
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.10) 50%, rgba(255,255,255,0.04) 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: 0.75rem;
+}
+
+/* Borde degradado que se enciende al hover (tarjetas premium) */
+.glow-hover { position: relative; transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease; }
+.glow-hover::after {
+  content: '';
+  position: absolute; inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(16,185,129,0.0), rgba(245,158,11,0.0));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  transition: background 0.3s ease;
+}
+.glow-hover:hover::after {
+  background: linear-gradient(135deg, rgba(16,185,129,0.55), transparent 35%, transparent 65%, rgba(245,158,11,0.5));
+}
+.glow-hover:hover { box-shadow: 0 12px 40px -12px rgba(16,185,129,0.35); }
+
+/* Anillo cónico decorativo reutilizable */
+.conic-ring {
+  background: conic-gradient(from 0deg, rgba(16,185,129,0.55), rgba(245,158,11,0.4), rgba(239,68,68,0.45), rgba(16,185,129,0.55));
+}
+
 /* Scrollbar elegante */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
