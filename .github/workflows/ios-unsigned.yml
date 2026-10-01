@@ -1,0 +1,68 @@
+name: iOS en la nube (IPA sin firmar)
+
+# Compila la app iOS en servidores de Apple (GitHub) sin necesidad de Mac.
+# El .ipa sale SIN firma: instálalo en tu iPhone con Sideloadly (Windows)
+# usando tu Apple ID (firma gratis de 7 días, renovable).
+#
+# Uso: pestaña Actions → "iOS en la nube" → Run workflow → descarga el
+# artefacto "Kalory-unsigned-ipa".
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-15
+    steps:
+      - name: Código
+        uses: actions/checkout@v4
+
+      - name: Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Dependencias web
+        run: npm ci
+
+      - name: Compilar web
+        run: npm run build
+
+      - name: Dependencias Mobil
+        working-directory: Mobil
+        run: npm ci
+
+      - name: Sincronizar iOS
+        working-directory: Mobil
+        run: npx cap sync ios
+
+      - name: Pods nativos
+        working-directory: Mobil/ios/App
+        run: pod install
+
+      - name: Archivar (sin firma)
+        working-directory: Mobil/ios/App
+        run: >
+          xcodebuild
+          -workspace App.xcworkspace
+          -scheme App
+          -configuration Release
+          -destination 'generic/platform=iOS'
+          -archivePath "$GITHUB_WORKSPACE/build/Kalory.xcarchive"
+          CODE_SIGNING_ALLOWED=NO
+          archive
+
+      - name: Empaquetar .ipa
+        run: |
+          mkdir -p Payload
+          cp -R build/Kalory.xcarchive/Products/Applications/App.app Payload/
+          zip -r Kalory-unsigned.ipa Payload
+          ls -la Kalory-unsigned.ipa
+
+      - name: Subir artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kalory-unsigned-ipa
+          path: Kalory-unsigned.ipa
+          retention-days: 14

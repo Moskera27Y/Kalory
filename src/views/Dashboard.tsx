@@ -89,7 +89,7 @@ export default function Dashboard() {
               <ActivityRings consumed={consumed} target={Math.max(1, target)} burned={burned} />
               <div className="mt-2 flex justify-center gap-5 text-xs">
                 <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald" /> Consumidas</span>
-                <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-gradient-to-r from-fire to-fire-hot" /> Quemadas (est.) <b>{burned}</b></span>
+                <span className="flex items-center gap-1.5 whitespace-nowrap"><span className="h-2.5 w-2.5 rounded-full bg-gradient-to-r from-fire to-fire-hot" /> Quemadas <b>{burned}</b></span>
               </div>
             </GlassCard>
           </motion.div>

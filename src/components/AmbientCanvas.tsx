@@ -1,17 +1,20 @@
 import { useEffect, useRef } from 'react';
 
 /**
- * Fondo aurora animado en canvas: orbes esmeralda/ámbar/rojo a la deriva
- * + grano sutil. DPR-aware, se pausa si la pestaña se oculta o hay
- * prefers-reduced-motion. Sustituye a los resplandores estáticos.
+ * Fondo vivo: auroras intensas a la deriva + polvo luminoso ascendente.
+ * DPR-aware, se pausa si la pestaña se oculta o hay prefers-reduced-motion.
  */
 const BLOBS = [
-  { x: 0.12, y: 0.08, r: 0.32, c: '16,185,129', a: 0.20, sx: 0.021, sy: 0.014, p: 0.0 },
-  { x: 0.92, y: 0.18, r: 0.36, c: '245,158,11', a: 0.15, sx: -0.017, sy: 0.012, p: 2.1 },
-  { x: 0.55, y: 1.02, r: 0.40, c: '239,68,68', a: 0.11, sx: 0.013, sy: -0.010, p: 4.2 },
-  { x: 0.82, y: 0.85, r: 0.26, c: '5,150,105', a: 0.13, sx: -0.011, sy: 0.016, p: 1.2 },
-  { x: 0.30, y: 0.55, r: 0.20, c: '52,211,153', a: 0.07, sx: 0.016, sy: -0.013, p: 3.0 },
+  { x: 0.10, y: 0.06, r: 0.48, c: '16,185,129', a: 0.42, sx: 0.034, sy: 0.022, p: 0.0 },
+  { x: 0.94, y: 0.16, r: 0.52, c: '245,158,11', a: 0.34, sx: -0.028, sy: 0.019, p: 2.1 },
+  { x: 0.55, y: 1.04, r: 0.56, c: '239,68,68', a: 0.26, sx: 0.020, sy: -0.016, p: 4.2 },
+  { x: 0.84, y: 0.86, r: 0.38, c: '5,150,105', a: 0.30, sx: -0.018, sy: 0.024, p: 1.2 },
+  { x: 0.28, y: 0.58, r: 0.32, c: '52,211,153', a: 0.18, sx: 0.024, sy: -0.020, p: 3.0 },
+  { x: 0.45, y: 0.30, r: 0.30, c: '251,146,60', a: 0.14, sx: -0.026, sy: 0.015, p: 5.1 },
+  { x: 0.05, y: 0.75, r: 0.34, c: '16,185,129', a: 0.20, sx: 0.019, sy: -0.021, p: 0.7 },
 ];
+
+const DUST = 46;
 
 export default function AmbientCanvas() {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -35,6 +38,15 @@ export default function AmbientCanvas() {
     resize();
     window.addEventListener('resize', resize);
 
+    const dust = Array.from({ length: DUST }, (_, i) => ({
+      x: ((i * 173) % 100) / 100,
+      y: ((i * 311) % 100) / 100,
+      r: 0.8 + ((i * 7) % 12) / 8,
+      v: 0.006 + ((i * 13) % 10) / 1400,
+      tw: (i * 37) % 100 / 100 * Math.PI * 2,
+      emerald: i % 3 !== 0,
+    }));
+
     const t0 = performance.now();
     const tick = (t: number) => {
       raf = requestAnimationFrame(tick);
@@ -44,14 +56,22 @@ export default function AmbientCanvas() {
       ctx.clearRect(0, 0, w, h);
       const R = Math.max(w, h);
       for (const b of BLOBS) {
-        const x = (b.x + Math.sin(time * b.sx * 8 + b.p) * 0.06) * w;
-        const y = (b.y + Math.cos(time * b.sy * 8 + b.p) * 0.06) * h;
-        const r = b.r * R * (1 + Math.sin(time * 0.25 + b.p) * 0.05);
+        const x = (b.x + Math.sin(time * b.sx * 8 + b.p) * 0.07) * w;
+        const y = (b.y + Math.cos(time * b.sy * 8 + b.p) * 0.07) * h;
+        const r = b.r * R * (1 + Math.sin(time * 0.3 + b.p) * 0.06);
         const g = ctx.createRadialGradient(x, y, 0, x, y, r);
         g.addColorStop(0, `rgba(${b.c},${b.a})`);
         g.addColorStop(1, `rgba(${b.c},0)`);
         ctx.fillStyle = g;
         ctx.fillRect(0, 0, w, h);
+      }
+      for (const d of dust) {
+        const y = ((d.y - time * d.v) % 1 + 1) % 1;
+        const alpha = 0.12 + 0.12 * Math.sin(time * 1.4 + d.tw);
+        ctx.beginPath();
+        ctx.arc(d.x * w, y * h, d.r, 0, Math.PI * 2);
+        ctx.fillStyle = d.emerald ? `rgba(52,211,153,${Math.max(0, alpha)})` : `rgba(251,191,36,${Math.max(0, alpha)})`;
+        ctx.fill();
       }
     };
     raf = requestAnimationFrame(tick);

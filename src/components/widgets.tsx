@@ -69,8 +69,8 @@ export function WaterTracker({ ml, goal, onAdd }: { ml: number; goal: number; on
   };
 
   return (
-    <div className="flex items-center gap-4">
-      <div className="relative h-32 w-20 shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+    <div className="flex items-center gap-3 min-w-0">
+      <div className="relative h-32 w-16 sm:w-20 shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-white/5">
         <motion.div
           className="absolute bottom-0 w-full bg-gradient-to-t from-[#059669] to-[#34D399]/80"
           initial={false}
@@ -86,22 +86,22 @@ export function WaterTracker({ ml, goal, onAdd }: { ml: number; goal: number; on
       <div className="flex-1 min-w-0">
         <p className="font-bold">{(ml / 1000).toFixed(2)} L <span className="text-muted font-normal">/ {(goal / 1000).toFixed(2)} L</span></p>
         <p className="text-xs text-muted">≈ {glasses.toFixed(1)} vasos de 250 ml</p>
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        <div className="mt-2 grid grid-cols-3 gap-1.5">
           {BOTTLES.map((v) => (
             <motion.button key={v} whileTap={{ scale: 0.9 }} onClick={() => onAdd(v)}
-              className="chip !px-2.5 !py-1.5 !text-xs hover:border-emerald/50 hover:text-emerald">+{v}</motion.button>
+              className="chip !px-1 !py-1.5 !text-xs whitespace-nowrap text-center hover:border-emerald/50 hover:text-emerald">+{v}</motion.button>
           ))}
+          <button onClick={() => onAdd(-250)} title="Corregir: restar 250 ml" className="chip !px-1 !py-1.5 !text-xs text-muted whitespace-nowrap text-center">−250</button>
         </div>
         <div className="mt-2 flex gap-1.5">
           <input
             type="number" min={-3000} max={3000} value={custom}
             onChange={(e) => setCustom(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') addCustom(); }}
-            className="input-kalory !py-1.5 !px-3 !text-xs w-24"
-            placeholder="ml"
+            className="input-kalory !py-1.5 !px-2 !text-xs flex-1 min-w-0"
+            placeholder="ml exactos"
           />
-          <button onClick={addCustom} className="chip !py-1.5 !text-xs !border-emerald/40 text-emerald">Añadir ml</button>
-          <button onClick={() => onAdd(-250)} title="Corregir: restar 250 ml" className="chip !py-1.5 !text-xs text-muted">−250</button>
+          <button onClick={addCustom} className="chip !py-1.5 !px-2.5 !text-xs !border-emerald/40 text-emerald whitespace-nowrap shrink-0">Añadir</button>
         </div>
       </div>
     </div>
