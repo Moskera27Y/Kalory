@@ -5,6 +5,7 @@ import { GlassCard } from '../components/ui';
 import { useStore } from '../lib/store';
 import { getDb } from '../lib/db';
 import { isNative } from '../lib/steps';
+import { analyzeFood, downscale, pickPhoto, takePhoto, FOOD_ERRORS, type FoodEstimate } from '../lib/foodLens';
 import { buildWeekMenu, shoppingList } from '../lib/recipes';
 
 /** Escáner con la cámara (solo móvil): detecta el código en vivo. */
@@ -61,6 +62,89 @@ const CATALOG = [
 ];
 
 const MEALS = ['Desayuno', 'Almuerzo', 'Cena', 'Snack', 'Extra'];
+
+/** Lector de calorías (solo móvil nativo): foto del plato → análisis IA → registro. */
+function FoodLens({ meal, onAdd }: { meal: string; onAdd: (f: { name: string; kcal: number; protein?: number; carbs?: number; fat?: number; meal?: string }) => Promise<void> }) {
+  const [photo, setPhoto] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [analysis, setAnalysis] = useState('');
+  const [food, setFood] = useState<FoodEstimate | null>(null);
+  const [error, setError] = useState('');
+  const [saved, setSaved] = useState('');
+
+  const fromDataUrl = async (dataUrl: string) => {
+    setError('');
+    setSaved('');
+    setAnalysis('');
+    setFood(null);
+    setPhoto(dataUrl);
+    setBusy(true);
+    try {
+      const { base64, mime } = await downscale(dataUrl);
+      const r = await analyzeFood(base64, mime);
+      setAnalysis(r.analysis);
+      setFood(r.food);
+    } catch (e) {
+      const code = (e as { code?: string })?.code || (e as Error)?.message || 'server_error';
+      setError(FOOD_ERRORS[code] ?? 'No se pudo analizar. Reintenta.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const shoot = async () => {
+    setError('');
+    try {
+      setPhoto(await takePhoto().then(async (d) => (await fromDataUrl(d), d)));
+    } catch {
+      setError('No se pudo abrir la cámara. Revisa el permiso.');
+    }
+  };
+
+  const gallery = async () => {
+    setError('');
+    try {
+      const d = await pickPhoto();
+      await fromDataUrl(d);
+    } catch {
+      setError('No se pudo abrir la galería.');
+    }
+  };
+
+  const save = async () => {
+    if (!food) return;
+    await onAdd({ name: `${food.name}`, kcal: food.kcal, protein: food.protein, carbs: food.carbs, fat: food.fat, meal });
+    setSaved(`Registrado en ${meal}: ${food.name} · ${food.kcal} kcal.`);
+  };
+
+  return (
+    <GlassCard glow>
+      <div className="flex items-center gap-2"><Camera size={16} className="text-fire" /><p className="text-xs uppercase tracking-widest text-muted">Lector de calorías · {meal}</p></div>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <button onClick={shoot} disabled={busy} className="btn-fire !py-2.5 text-sm flex items-center justify-center gap-2 disabled:opacity-50">
+          <Camera size={15} /> {busy ? 'Analizando…' : 'Tomar foto'}
+        </button>
+        <button onClick={gallery} disabled={busy} className="chip !py-2.5 text-xs flex items-center justify-center gap-2 disabled:opacity-50">
+          Galería
+        </button>
+      </div>
+      {photo && <img src={photo} alt="Plato" className="mt-2 h-44 w-full rounded-xl border border-white/10 object-cover" />}
+      {busy && <p className="mt-2 flex items-center gap-2 text-xs text-muted"><Loader2 size={14} className="animate-spin" /> Analizando tu plato…</p>}
+      {error && <p className="mt-2 text-xs text-fire">{error}</p>}
+      {analysis && (
+        <pre className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap rounded-xl border border-white/10 bg-white/[0.03] p-3 text-xs leading-relaxed">{analysis.replace(/<!--FOOD_JSON.*?-->/s, '').trim()}</pre>
+      )}
+      {food && (
+        <div className="mt-2 rounded-xl border border-emerald/30 bg-emerald/10 p-3">
+          <p className="text-xs font-bold">{food.name}</p>
+          <p className="mt-1 text-[11px] text-muted">{food.kcal} kcal · P {food.protein}g · C {food.carbs}g · G {food.fat}g</p>
+          <button onClick={save} className="btn-emerald mt-2 w-full !py-2 text-sm">Registrar en {meal}</button>
+        </div>
+      )}
+      {saved && <p className="mt-2 text-xs text-emerald">{saved}</p>}
+    </GlassCard>
+  );
+}
 
 export default function Nutrition() {
   const { day, logFood, deleteFood, consumed, profile } = useStore();
@@ -205,6 +289,8 @@ export default function Nutrition() {
         </button>
       </div>
       {repeatMsg && <p className="text-xs text-emerald">{repeatMsg}</p>}
+
+      {isNative() && <FoodLens meal={meal} onAdd={logFood} />}
 
       {favs.length > 0 && (
         <GlassCard className="!p-4">

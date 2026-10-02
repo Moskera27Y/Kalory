@@ -320,6 +320,88 @@ app.get('/api/auth/google/poll', async (req, res) => {
   return res.json({ ok: true, pending: true });
 });
 
+// ---------- lector de calorías (solo móvil): foto → análisis con IA gratuita ----------
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
+const FOOD_PROMPT = `Actúa como nutricionista experto, dietista y científico de datos especializado en visión por computadora aplicada a la nutrición.
+Analiza la imagen del plato y responde ESTRICTAMENTE con este formato:
+
+🍽️ **Alimentos detectados:**
+- [Alimento 1] (~[gramos/porción aprox.])
+- [Alimento 2] (~[gramos/porción aprox.])
+
+📊 **Información nutricional estimada:**
+- **Calorías totales:** ~XXX kcal
+- **Proteínas:** ~XX g
+- **Carbohidratos:** ~XX g
+- **Grasas:** ~XX g
+
+💡 **Observación / Consejos:**
+[Comentario breve: balance, ingredientes ocultos como aceites/mantequilla/azúcares, la estimación es aproximada por ser visual].
+
+Si no hay comida clara, dilo amablemente y pide otra foto. Termina con una línea JSON exacta para registro: <!--FOOD_JSON {"name":"...","kcal":0,"protein":0,"carbs":0,"fat":0}--> con totales estimados y nombre corto del plato.`;
+
+app.post('/api/food/analyze', auth, async (req, res) => {
+  try {
+    const { imageBase64, mime } = req.body || {};
+    if (!imageBase64 || typeof imageBase64 !== 'string' || imageBase64.length < 1000) {
+      return res.status(400).json({ ok: false, error: 'sin_imagen' });
+    }
+    if (imageBase64.length > 2_500_000) {
+      return res.status(400).json({ ok: false, error: 'imagen_grande' });
+    }
+    if (!OPENROUTER_API_KEY) {
+      return res.status(503).json({ ok: false, error: 'sin_ia' });
+    }
+    const dataUrl = `data:${mime === 'image/png' ? 'image/png' : 'image/jpeg'};base64,${imageBase64}`;
+    const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+        'HTTP-Referer': publicBase() || 'https://kalory.app',
+        'X-Title': 'Kalory Lector de Calorias',
+      },
+      body: JSON.stringify({
+        // Router gratuito: elige solo un modelo free con visión (cero costo)
+        model: 'openrouter/free',
+        messages: [
+          { role: 'user', content: [{ type: 'text', text: FOOD_PROMPT }, { type: 'image_url', image_url: { url: dataUrl } }] },
+        ],
+        max_tokens: 900,
+        temperature: 0.3,
+      }),
+    });
+    if (!r.ok) {
+      const t = await r.text().catch(() => '');
+      console.error('[food] OpenRouter:', r.status, t.slice(0, 200));
+      return res.status(502).json({ ok: false, error: 'ia_no_disponible' });
+    }
+    const d = await r.json();
+    const text = d.choices?.[0]?.message?.content || '';
+    if (!text) return res.status(502).json({ ok: false, error: 'ia_vacia' });
+    let food = null;
+    const m = /<!--FOOD_JSON\s(\{.*?\})-->/.exec(text);
+    if (m) {
+      try {
+        const j = JSON.parse(m[1]);
+        if (Number.isFinite(+j.kcal)) {
+          food = {
+            name: String(j.name || 'Plato analizado').slice(0, 80),
+            kcal: Math.max(1, Math.round(+j.kcal)),
+            protein: Math.max(0, +(+j.protein || 0).toFixed(1)),
+            carbs: Math.max(0, +(+j.carbs || 0).toFixed(1)),
+            fat: Math.max(0, +(+j.fat || 0).toFixed(1)),
+          };
+        }
+      } catch { /* ignora */ }
+    }
+    res.json({ ok: true, analysis: text, food, model: d.model || undefined });
+  } catch (e) {
+    console.error('[food]', e.message);
+    res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
 // ---------- datos del usuario ----------
 app.get('/api/bootstrap', auth, async (req, res) => {
   await ready();
