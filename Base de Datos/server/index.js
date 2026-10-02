@@ -19,6 +19,9 @@ const PORT = Number(process.env.PORT || 3001);
 const JWT_SECRET = process.env.JWT_SECRET || 'CAMBIA-ESTE-SECRETO-EN-PRODUCCION';
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'kalory-admin-local';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '60146882018-1ad06p3sgqlo46ka8s2msm50r2m2durd.apps.googleusercontent.com';
+// Cliente tipo Web (solo para el login móvil vía navegador). Si no se define, se usa el de escritorio.
+const GOOGLE_WEB_CLIENT_ID = process.env.GOOGLE_WEB_CLIENT_ID || '';
+const GOOGLE_WEB_CLIENT_SECRET = process.env.GOOGLE_WEB_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET || '';
 const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, 'data', 'kalory-online.db');
 
 let SQL = null;
@@ -146,7 +149,8 @@ async function verifyGoogleIdToken(idToken) {
   const r = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
   if (!r.ok) throw new Error('token_invalido');
   const info = await r.json();
-  if (info.aud !== GOOGLE_CLIENT_ID) throw new Error('aud_invalido');
+  const validAud = [GOOGLE_CLIENT_ID, GOOGLE_WEB_CLIENT_ID].filter(Boolean);
+  if (!validAud.includes(info.aud)) throw new Error('aud_invalido');
   if (!info.sub || !info.email) throw new Error('perfil_invalido');
   return { sub: info.sub, email: info.email, name: info.name || info.email };
 }
@@ -239,11 +243,12 @@ setInterval(() => {
 app.post('/api/auth/google/start', async (req, res) => {
   await ready();
   const base = publicBase();
+  const webId = GOOGLE_WEB_CLIENT_ID || GOOGLE_CLIENT_ID;
   if (!base) return res.status(500).json({ ok: false, error: 'sin_public_url' });
   const state = crypto.randomBytes(16).toString('hex');
   pendingGoogle.set(state, { createdAt: Date.now() });
   const url = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
-    client_id: GOOGLE_CLIENT_ID,
+    client_id: webId,
     redirect_uri: `${base}/api/auth/google/callback`,
     response_type: 'code',
     scope: 'openid email profile',
@@ -268,15 +273,17 @@ app.get('/api/auth/google/callback', async (req, res) => {
     return page('Acceso cancelado', 'Vuelve a Kalory e inténtalo de nuevo.');
   }
   try {
-    if (!GOOGLE_CLIENT_SECRET) throw new Error('sin_secreto');
+    const webId = GOOGLE_WEB_CLIENT_ID || GOOGLE_CLIENT_ID;
+    const webSecret = GOOGLE_WEB_CLIENT_SECRET;
+    if (!webSecret) throw new Error('sin_secreto');
     const base = publicBase();
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         code: String(code),
-        client_id: GOOGLE_CLIENT_ID,
-        client_secret: GOOGLE_CLIENT_SECRET,
+        client_id: webId,
+        client_secret: webSecret,
         redirect_uri: `${base}/api/auth/google/callback`,
         grant_type: 'authorization_code',
       }).toString(),
@@ -285,7 +292,8 @@ app.get('/api/auth/google/callback', async (req, res) => {
     const tok = await tokenRes.json();
     if (!tok.id_token) throw new Error('canje_fallido');
     const payload = JSON.parse(Buffer.from(tok.id_token.split('.')[1], 'base64').toString('utf8'));
-    if (!payload.sub || !payload.email || payload.aud !== GOOGLE_CLIENT_ID) throw new Error('perfil_invalido');
+    const validAud = [GOOGLE_CLIENT_ID, GOOGLE_WEB_CLIENT_ID].filter(Boolean);
+    if (!payload.sub || !payload.email || !validAud.includes(payload.aud)) throw new Error('perfil_invalido');
     const u = await findOrCreateGoogleUser({ sub: payload.sub, email: payload.email, name: payload.name || payload.email });
     pend.token = sign(u.id);
     pend.user = pub(u);
