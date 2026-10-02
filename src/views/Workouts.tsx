@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Pause, RotateCcw, CheckCircle2, X, Printer, Zap, Star, PartyPopper } from 'lucide-react';
+import { Play, Pause, RotateCcw, CheckCircle2, X, Printer, Zap, Star, PartyPopper, BookOpen } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { GlassCard } from '../components/ui';
 import { useStore } from '../lib/store';
+import { getAssignedPlan } from '../lib/library';
+import { saveHealthWorkout } from '../lib/steps';
 
 interface Exercise { name: string; sets: string; tip: string }
 
@@ -274,19 +277,23 @@ function HiitTimer() {
 }
 
 export default function Workouts() {
-  const { profile, day, toggleExercise } = useStore();
+  const { profile, day, toggleExercise, user } = useStore();
   const [tab, setTab] = useState<'rutina' | 'hiit'>('rutina');
   const [session, setSession] = useState(false);
+  const [sessionStart, setSessionStart] = useState(Date.now());
   const daysPerWeek = profile?.daysPerWeek ?? 3;
   const isBeginner = profile?.experience === 'principiante';
-  const exercises = isBeginner ? FOUNDATION : daysPerWeek > 3 ? SPLIT_DAY : FULL_BODY;
-  const planName = isBeginner ? 'Semana 1 · Acondicionamiento' : daysPerWeek > 3 ? 'Tren superior / inferior' : 'Cuerpo completo';
+  const custom = user ? getAssignedPlan(user.id) : null;
+  const exercises = custom ? custom.exercises : isBeginner ? FOUNDATION : daysPerWeek > 3 ? SPLIT_DAY : FULL_BODY;
+  const planName = custom ? custom.name : isBeginner ? 'Semana 1 · Acondicionamiento' : daysPerWeek > 3 ? 'Tren superior / inferior' : 'Cuerpo completo';
   const todayIdx = (new Date().getDay() + 6) % 7;
 
   const finishSession = async (names: string[]) => {
     for (const n of names) {
       if (!day.done.includes(n)) await toggleExercise(n, exercises.length);
     }
+    // Guarda el entreno en Salud del teléfono (iOS) sin bloquear
+    saveHealthWorkout(sessionStart, Date.now(), names.length * 90).catch(() => undefined);
     setSession(false);
   };
 
@@ -311,7 +318,8 @@ export default function Workouts() {
             <button onClick={() => setTab('hiit')} className={`rounded-lg px-4 py-2 text-xs font-bold ${tab === 'hiit' ? 'bg-fire/20 text-white' : 'text-muted'}`}>HIIT</button>
           </div>
           <button onClick={() => window.print()} title="Imprimir / guardar PDF" className="chip !py-2 flex items-center gap-1.5 text-xs"><Printer size={14} /> Imprimir</button>
-          <button onClick={() => setSession(true)} className="btn-fire !py-2 text-sm flex items-center gap-2"><Play size={15} /> Iniciar sesión</button>
+          <Link to="/biblioteca" className="chip !py-2 flex items-center gap-1.5 text-xs !border-emerald/40 text-emerald"><BookOpen size={14} /> Biblioteca</Link>
+          <button onClick={() => { setSessionStart(Date.now()); setSession(true); }} className="btn-fire !py-2 text-sm flex items-center gap-2"><Play size={15} /> Iniciar sesión</button>
         </div>
       </div>
 

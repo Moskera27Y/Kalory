@@ -49,5 +49,7 @@
 	<string>Kalory lee tus pasos diarios para mostrarlos en tu panel y sumarlos a tu actividad.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Kalory registra tus entrenamientos para llevar tu historial de actividad.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Kalory usa la cámara para escanear códigos de barras de alimentos.</string>
 </dict>
 </plist>

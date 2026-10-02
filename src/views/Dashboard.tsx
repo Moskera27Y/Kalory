@@ -1,11 +1,15 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Flame, Dumbbell, ChevronRight, Beef, Wheat, Droplet, Plus, TrendingUp, Trophy, Footprints } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Flame, Dumbbell, ChevronRight, Beef, Wheat, Droplet, Plus, TrendingUp, Trophy, Footprints, X, PieChart, Star, PartyPopper } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { GlassCard } from '../components/ui';
 import { ActivityRings, AnimatedCounter, WaterTracker } from '../components/widgets';
 import FastingWidget from '../components/FastingWidget';
-import { STEPS_GOAL } from '../lib/steps';
+import { STEPS_GOAL, saveWidgetSnapshot } from '../lib/steps';
+import { saveSleep, listSleep, avgSleep } from '../lib/sleep';
+import { coachMessage, type CoachIcon } from '../lib/coach';
+import { fastingState, PROTOCOLS } from '../lib/fasting';
+import { UtensilsCrossed, MoonStar, Moon } from 'lucide-react';
 import { useStore } from '../lib/store';
 import { staggerParent, staggerChild } from '../lib/motion';
 
@@ -14,13 +18,27 @@ function Skeleton({ className = '' }: { className?: string }) {
 }
 
 export default function Dashboard() {
-  const { profile, targets, consumed, proteinEaten, carbsEaten, fatEaten, day, logFood, logWater, activeDays, history, streak, loading, steps, stepsSupported, refreshSteps } = useStore();
+  const { user, profile, targets, consumed, proteinEaten, carbsEaten, fatEaten, day, logFood, logWater, activeDays, history, streak, loading, steps, stepsSupported, stepsError, refreshSteps } = useStore();
   const target = targets?.calories ?? 0;
   const burned = day.done.length * 90;
   const remaining = Math.max(0, target - consumed);
 
   const [quickName, setQuickName] = useState('');
   const [quickKcal, setQuickKcal] = useState('');
+  const [showSummary, setShowSummary] = useState(false);
+  const [bed, setBed] = useState('23:00');
+  const [wake, setWake] = useState('07:00');
+  const [, setSleepTick] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    saveWidgetSnapshot({
+      steps: steps !== null ? steps.toLocaleString('es') : '—',
+      water: `${(day.waterMl / 1000).toFixed(1)}L`,
+      streak: `${streak}🔥`,
+    }).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [consumed, day.waterMl, streak, steps]);
 
   const nowD = new Date();
   const dow = (nowD.getDay() + 6) % 7;
@@ -85,14 +103,20 @@ export default function Dashboard() {
         {/* Héroe: anillos + ayuno */}
         <div className="grid gap-4 md:grid-cols-2">
           <motion.div variants={staggerChild}>
+            <button onClick={() => setShowSummary(true)} className="w-full text-left">
             <GlassCard glow className="glow-hover h-full">
-              <p className="text-xs uppercase tracking-widest text-muted">Resumen de hoy</p>
+              <div className="flex items-center gap-2">
+                <p className="text-xs uppercase tracking-widest text-muted">Resumen de hoy</p>
+                <PieChart size={13} className="text-muted" />
+              </div>
               <ActivityRings consumed={consumed} target={Math.max(1, target)} burned={burned} />
               <div className="mt-2 flex justify-center gap-5 text-xs">
                 <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald" /> Consumidas</span>
                 <span className="flex items-center gap-1.5 whitespace-nowrap"><span className="h-2.5 w-2.5 rounded-full bg-gradient-to-r from-fire to-fire-hot" /> Quemadas <b>{burned}</b></span>
               </div>
+              <p className="mt-2 text-center text-[11px] text-emerald">Toca para ver el desglose →</p>
             </GlassCard>
+            </button>
           </motion.div>
           <motion.div variants={staggerChild}>
             <FastingWidget />
@@ -117,16 +141,36 @@ export default function Dashboard() {
                   {steps !== null ? steps.toLocaleString('es') : '• • •'}
                 </p>
                 <p className="text-[11px] uppercase tracking-wider text-muted">Pasos</p>
-                <p className="text-[11px] text-muted/70">{steps !== null ? `meta ${STEPS_GOAL.toLocaleString('es')}` : 'toca para activar'}</p>
+                <p className="text-[11px] text-muted/70">
+                  {steps !== null ? `meta ${STEPS_GOAL.toLocaleString('es')}` : stepsError ?? 'toca para activar'}
+                </p>
               </GlassCard>
             </motion.button>
           )}
         </motion.div>
 
-        {/* Siguiente acción sugerida */}
-        <motion.div variants={staggerChild}>
+        {/* Coach + siguiente acción */}
+        <motion.div variants={staggerChild} className="flex flex-col gap-3">
           {(() => {
             const h = new Date().getHours();
+            const fst = user?.id ? fastingState(user.id) : null;
+            const felapsed = fst?.activeStart ? Date.now() - fst.activeStart : 0;
+            const fproto = PROTOCOLS.find((p) => p.id === fst?.protocolId);
+            const cIcons: Record<CoachIcon, typeof Flame> = {
+              flame: Flame, droplet: Droplet, dumbbell: Dumbbell, food: UtensilsCrossed,
+              trophy: Trophy, party: PartyPopper, moon: MoonStar, star: Star,
+            };
+            const msg = coachMessage({
+              name: profile?.name?.split(' ')[0] || 'campeón',
+              streak, weekTrainDays, goalDays,
+              hasFood: day.foods.length > 0,
+              waterPct: targets ? day.waterMl / Math.max(1, targets.waterMl) : 0,
+              consumedPct: target ? consumed / Math.max(1, target) : 0,
+              doneExercises: day.done.length,
+              fastingActive: !!fst?.activeStart,
+              fastingDone: !!fst?.activeStart && fproto ? felapsed >= fproto.hours * 3600000 : false,
+            });
+            const CIcon = cIcons[msg.icon];
             let action: { icon: typeof Flame; text: string; to: string; cta: string } | null = null;
             if (day.foods.length === 0) {
               action = {
@@ -141,16 +185,25 @@ export default function Dashboard() {
             } else if (targets && consumed < targets.calories * 0.9 && h >= 19) {
               action = { icon: Beef, text: `Te faltan ${Math.round(targets.calories - consumed)} kcal: completa con una cena con proteína`, to: '/dieta', cta: 'Cenar' };
             }
-            if (!action) return null;
-            const AIcon = action.icon;
             return (
-              <Link to={action.to}>
-                <GlassCard className="glow-hover flex items-center gap-4 border-fire/30 bg-gradient-to-r from-fire/10 to-transparent">
-                  <span className="rounded-2xl bg-gradient-to-r from-[#F59E0B] to-[#EF4444] p-2.5 text-white shadow-glow-fire"><AIcon size={19} /></span>
-                  <p className="flex-1 text-sm font-semibold">{action.text}</p>
-                  <span className="rounded-xl bg-white/10 px-3 py-2 text-xs font-bold">{action.cta} →</span>
-                </GlassCard>
-              </Link>
+              <>
+                <div className="glass flex items-center gap-3 px-4 py-3">
+                  <span className="rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 p-2 text-white shrink-0"><CIcon size={17} /></span>
+                  <p className="text-[13px] leading-snug"><b className="text-white">Coach:</b> <span className="text-muted">{msg.text}</span></p>
+                </div>
+                {action && (() => {
+                  const AIcon = action.icon;
+                  return (
+                    <Link to={action.to}>
+                      <GlassCard className="glow-hover flex items-center gap-4 border-fire/30 bg-gradient-to-r from-fire/10 to-transparent">
+                        <span className="rounded-2xl bg-gradient-to-r from-[#F59E0B] to-[#EF4444] p-2.5 text-white shadow-glow-fire"><AIcon size={19} /></span>
+                        <p className="flex-1 text-sm font-semibold">{action.text}</p>
+                        <span className="rounded-xl bg-white/10 px-3 py-2 text-xs font-bold">{action.cta} →</span>
+                      </GlassCard>
+                    </Link>
+                  );
+                })()}
+              </>
             );
           })()}
         </motion.div>
@@ -253,7 +306,112 @@ export default function Dashboard() {
             <p className="text-xs text-muted">Estimación por ejercicios completados hoy</p>
           </GlassCard>
         </motion.div>
+        <motion.div variants={staggerChild}>
+          <GlassCard className="glow-hover">
+            <div className="flex items-center gap-2 text-sm font-bold"><Moon size={17} className="text-violet-400" /> Sueño</div>
+            {(() => {
+              const mine = user ? listSleep(user.id) : [];
+              const last = mine[0];
+              const avg = user ? avgSleep(user.id) : null;
+              return (
+                <>
+                  {last && <p className="mt-2 text-xs text-muted">Anoche: <b className="text-white">{last.hours} h</b> ({last.bed} → {last.wake}){avg != null ? ` · prom. ${avg} h` : ''}</p>}
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <label className="grid gap-1 text-[11px] text-muted">Acostada
+                      <input type="time" value={bed} onChange={(e) => setBed(e.target.value)} className="rounded-lg bg-white/5 border border-white/10 px-2 py-1.5 text-xs text-center tabular-nums" />
+                    </label>
+                    <label className="grid gap-1 text-[11px] text-muted">Despertada
+                      <input type="time" value={wake} onChange={(e) => setWake(e.target.value)} className="rounded-lg bg-white/5 border border-white/10 px-2 py-1.5 text-xs text-center tabular-nums" />
+                    </label>
+                  </div>
+                  <motion.button whileTap={{ scale: 0.97 }} onClick={() => { if (user) { saveSleep(user.id, bed, wake); setSleepTick((x) => x + 1); } }} className="btn-emerald mt-2 w-full !py-2 text-xs">
+                    Guardar noche
+                  </motion.button>
+                </>
+              );
+            })()}
+          </GlassCard>
+        </motion.div>
       </div>
+
+      <AnimatePresence>
+        {showSummary && (
+          <DaySummaryModal
+            consumed={consumed}
+            target={target}
+            burned={burned}
+            foods={day.foods}
+            done={day.done}
+            onClose={() => setShowSummary(false)}
+          />
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+function DaySummaryModal({ consumed, target, burned, foods, done, onClose }: {
+  consumed: number; target: number; burned: number;
+  foods: { id: number; name: string; kcal: number; meal: string }[];
+  done: string[]; onClose: () => void;
+}) {
+  const meals = ['Desayuno', 'Almuerzo', 'Cena', 'Snack', 'Extra'];
+  const byMeal = meals
+    .map((m) => ({ meal: m, items: foods.filter((f) => f.meal === m) }))
+    .filter((g) => g.items.length > 0);
+  const balance = Math.round(consumed - target);
+  return (
+    <motion.div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
+      <motion.div
+        className="glass-strong w-full max-w-md p-6 max-h-[85vh] overflow-y-auto"
+        initial={{ scale: 0.9, y: 24 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2">
+          <PieChart size={17} className="text-emerald" />
+          <p className="font-bold">Resumen de hoy</p>
+          <button onClick={onClose} className="ml-auto chip !px-3 !py-1.5 text-muted"><X size={14} /></button>
+        </div>
+        <p className="mt-2 text-xs text-muted leading-relaxed">
+          El anillo verde muestra lo que <b className="text-white">comiste</b> frente a tu meta;
+          el naranja, lo que <b className="text-white">quemaste</b> entrenando (estimación).
+        </p>
+
+        <p className="mt-4 text-xs uppercase tracking-widest text-muted">Consumidas · {Math.round(consumed).toLocaleString('es')} kcal</p>
+        <div className="mt-2 flex flex-col gap-1.5">
+          {byMeal.length === 0 && <p className="text-xs text-muted">Nada registrado hoy.</p>}
+          {byMeal.map((g) => (
+            <div key={g.meal} className="rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2">
+              <div className="flex justify-between text-xs">
+                <b>{g.meal}</b>
+                <b className="tabular-nums">{Math.round(g.items.reduce((a, x) => a + x.kcal, 0))} kcal</b>
+              </div>
+              {g.items.map((f) => (
+                <div key={f.id} className="flex justify-between text-[11px] text-muted">
+                  <span className="truncate">{f.name}</span>
+                  <span className="ml-2 tabular-nums">{Math.round(f.kcal)}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+
+        <p className="mt-4 text-xs uppercase tracking-widest text-muted">Quemadas (est.) · {burned} kcal</p>
+        <div className="mt-2 flex flex-col gap-1.5">
+          {done.length === 0 && <p className="text-xs text-muted">Sin ejercicios hoy. Cada ejercicio suma ~90 kcal.</p>}
+          {done.map((e) => (
+            <div key={e} className="flex justify-between text-xs rounded-lg bg-fire/10 border border-fire/20 px-3 py-2">
+              <span>{e}</span><b className="tabular-nums">~90</b>
+            </div>
+          ))}
+        </div>
+
+        <div className={`mt-4 rounded-xl border p-3 text-center text-sm font-bold ${balance <= 0 ? 'border-emerald/40 bg-emerald/10 text-emerald' : 'border-fire/40 bg-fire/10 text-fire'}`}>
+          {balance <= 0 ? `Vas ${Math.abs(balance).toLocaleString('es')} kcal por debajo de tu meta` : `Te pasaste por ${balance.toLocaleString('es')} kcal de tu meta`}
+        </div>
+      </motion.div>
     </motion.div>
   );
 }

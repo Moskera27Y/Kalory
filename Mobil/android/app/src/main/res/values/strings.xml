@@ -4,4 +4,5 @@
     <string name="title_activity_main">Kalory</string>
     <string name="package_name">com.kalory.app</string>
     <string name="custom_url_scheme">com.kalory.app</string>
+    <string name="widget_desc">Kalory: pasos, agua y racha del día</string>
 </resources>

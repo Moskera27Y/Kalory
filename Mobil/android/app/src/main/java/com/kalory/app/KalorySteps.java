@@ -103,4 +103,20 @@ public class KalorySteps extends Plugin {
             }
         }, 5000);
     }
+
+    /** Guarda una foto de datos para el widget (pasos/agua/racha). */
+    @PluginMethod
+    public void saveWidgetSnapshot(final PluginCall call) {
+        SharedPreferences prefs = getContext().getSharedPreferences("kalory_widget", Context.MODE_PRIVATE);
+        prefs.edit()
+                .putString("steps", call.getString("steps", "—"))
+                .putString("water", call.getString("water", "—"))
+                .putString("streak", call.getString("streak", "—"))
+                .putLong("at", System.currentTimeMillis())
+                .apply();
+        KaloryWidget.refresh(getContext());
+        JSObject ret = new JSObject();
+        ret.put("ok", true);
+        call.resolve(ret);
+    }
 }

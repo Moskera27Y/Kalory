@@ -63,3 +63,10 @@ CREATE TABLE IF NOT EXISTS weight_log(
 
 CREATE INDEX IF NOT EXISTS idx_food_user_date ON food_log(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_water_user_date ON water_log(user_id, date);
+
+CREATE TABLE IF NOT EXISTS friendships(
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  friend_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY(user_id, friend_id)
+);

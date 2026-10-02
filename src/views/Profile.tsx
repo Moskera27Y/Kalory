@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   UserCheck, ClipboardList, UtensilsCrossed, Droplet, Dumbbell,
   Trophy, Target, Flame, Pencil, Lock, CalendarCheck, Scale, Camera, Medal, Bell,
-  FileDown, FileUp, Database, FileText, MoonStar, Hourglass, LogOut, Footprints,
+  FileDown, FileUp, Database, FileText, MoonStar, Hourglass, LogOut, Footprints, UserPlus, Crown,
 } from 'lucide-react';
 import { GlassCard } from '../components/ui';
 import { MEDALS } from '../lib/achievements';
@@ -29,6 +29,8 @@ const MEDAL_ICONS: Record<string, typeof Trophy> = {
   ayuno_1: MoonStar,
   ayuno_7: Hourglass,
   pasos_10k: Footprints,
+  amigo_1: UserPlus,
+  top_1: Crown,
 };
 
 const ACT_LABEL: Record<string, string> = {

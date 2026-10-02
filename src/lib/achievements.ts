@@ -20,4 +20,6 @@ export const MEDALS: Medal[] = [
   { id: 'ayuno_1', name: 'Primer ayuno', desc: 'Completaste tu primer ayuno' },
   { id: 'ayuno_7', name: 'Maestro del ayuno', desc: 'Completaste 7 ayunos' },
   { id: 'pasos_10k', name: '10K en marcha', desc: 'Llegaste a 10.000 pasos en un día' },
+  { id: 'amigo_1', name: 'Compañero', desc: 'Añadiste tu primer amigo' },
+  { id: 'top_1', name: 'Número uno', desc: 'Lideraste el ranking semanal' },
 ];

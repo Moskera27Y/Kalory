@@ -7,6 +7,7 @@ import { useStore } from '../lib/store';
 import { todayStr } from '../lib/db';
 import { addPhoto, deletePhoto, listPhotos, type ProgressPhoto } from '../lib/photos';
 import { totalFastedHours } from '../lib/fasting';
+import { getHealthWeight, isNative, stepsPluginAvailable } from '../lib/steps';
 import type { DayHistory } from '../types';
 
 function Bars({ data, getValue, format, color, target }: {
@@ -86,6 +87,8 @@ export default function Progress() {
   const [photos, setPhotos] = useState<ProgressPhoto[]>(() => user?.id ? listPhotos(user.id) : []);
   const [compare, setCompare] = useState<string[]>([]);
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [healthMsg, setHealthMsg] = useState('');
+  const canImport = isNative() && stepsPluginAvailable();
 
   const data = history.slice(-range);
   const avgKcal = data.length ? Math.round(data.reduce((a, d) => a + d.kcal, 0) / data.length) : 0;
@@ -223,6 +226,22 @@ export default function Progress() {
             type="number" min={20} max={400} step="0.1" className="input-kalory !py-2 text-sm" placeholder={`Peso de hoy en kg${profile ? ` (meta ${profile.targetWeightKg})` : ''}`} />
           <motion.button whileTap={{ scale: 0.97 }} onClick={saveWeight} className="btn-emerald !py-2 text-sm whitespace-nowrap">Registrar</motion.button>
         </div>
+        {canImport && (
+          <button
+            onClick={async () => {
+              setHealthMsg('Leyendo Salud…');
+              const v = await getHealthWeight();
+              if (v != null) {
+                await setWeight(v, todayStr());
+                setHealthMsg(`Importado de Salud: ${v} kg.`);
+              } else setHealthMsg('Sin peso en Salud o sin permiso.');
+            }}
+            className="chip mt-2 !text-xs w-full text-emerald !border-emerald/40"
+          >
+            ⤓ Importar peso de Salud
+          </button>
+        )}
+        {healthMsg && <p className="mt-1.5 text-[11px] text-muted">{healthMsg}</p>}
       </GlassCard>
 
       <div className="grid gap-4 lg:grid-cols-2">

@@ -2,8 +2,9 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import type { AuthResult, AuthUser, DayData, DayHistory, MacroTargets, UserProfile, WeightEntry } from '../types';
 import { calcMacros } from './calculations';
 import { getDb, todayStr, daysAgo, type DbApi } from './db';
-import { ServerDb, clearServerSession, loadServerUrl, setServerUrlOnly, clearServerOverride } from './serverApi';
+import { ServerDb, clearServerSession, loadServerUrl, setServerUrlOnly, clearServerOverride, pendingCount } from './serverApi';
 import { getStepsToday, isNative, stepsPluginAvailable } from './steps';
+import { loadProfileShadow, loadAchShadow, loadDay, uidFromToken } from './syncQueue';
 
 interface Store {
   loading: boolean;
@@ -42,7 +43,14 @@ interface Store {
   weekWorkouts: number;
   steps: number | null;
   stepsSupported: boolean;
+  stepsError: string | null;
   refreshSteps: () => Promise<void>;
+  syncPending: number;
+  refreshSync: () => Promise<void>;
+  getInviteCode: () => Promise<string>;
+  addFriend: (code: string) => Promise<import('../types').AuthUser>;
+  getFriends: () => Promise<import('../types').FriendInfo[]>;
+  getLeaderboard: () => Promise<import('../types').BoardRow[]>;
   refreshHistory: () => Promise<void>;
   setWeight: (weight: number, date?: string) => Promise<void>;
 }
@@ -76,6 +84,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [weekWorkouts, setWeekWorkouts] = useState(0);
   const [steps, setSteps] = useState<number | null>(null);
   const [stepsSupported, setStepsSupported] = useState(false);
+  const [stepsError, setStepsError] = useState<string | null>(null);
+  const [syncPending, setSyncPending] = useState(0);
 
   const clearLocal = () => {
     setProfile(null);
@@ -90,6 +100,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setWeekWorkouts(0);
     setSteps(null);
     setStepsSupported(false);
+    setStepsError(null);
+    setSyncPending(0);
   };
 
   const isActiveDay = (d: DayHistory) => d.kcal > 0 || d.waterMl > 0 || d.exercises > 0;
@@ -127,6 +139,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     void list;
   };
 
+  const refreshSync = async () => {
+    if (!('syncNow' in db)) {
+      setSyncPending(0);
+      return;
+    }
+    try {
+      const had = syncPending;
+      const left = await (db as unknown as { syncNow: () => Promise<number> }).syncNow();
+      setSyncPending(left);
+      if (had > 0 && left === 0) await refresh();
+    } catch {
+      /* sin conexión: se reintenta luego */
+    }
+  };
+
+  const onlineDb = () => {
+    if (!('getLeaderboard' in db)) throw Object.assign(new Error('solo_online'), { code: 'solo_online' });
+    return db as unknown as {
+      getInviteCode: () => Promise<string>;
+      addFriend: (c: string) => Promise<import('../types').AuthUser>;
+      getFriends: () => Promise<import('../types').FriendInfo[]>;
+      getLeaderboard: () => Promise<import('../types').BoardRow[]>;
+    };
+  };
+
   const refresh = async () => {
     const date = todayStr();
     try {
@@ -143,17 +180,46 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setAchievements(st.achievements.map((a) => a.id));
       setAchievementDates(Object.fromEntries(st.achievements.map((a) => [a.id, a.unlocked_at])));
       setActiveDays(stats.activeDays);
+      await refreshSync();
     } catch (e) {
       // Sin sesión en el servidor → volver a bienvenida
       if ((e as { code?: string })?.code === 'no_session') {
         setUser(null);
         clearLocal();
+      } else if (e instanceof TypeError && 'syncNow' in db) {
+        // Sin internet: usa la última copia guardada en este equipo
+        try {
+          const raw = localStorage.getItem('kalory-server-v1');
+          const uid = uidFromToken(JSON.parse(raw || 'null')?.token || '');
+          if (uid != null) {
+            const sp = loadProfileShadow(uid);
+            if (sp) {
+              setProfile(sp.profile);
+              setTargets(sp.targets);
+              setAchievements(loadAchShadow(uid).map((a) => a.id));
+              setAchievementDates(Object.fromEntries(loadAchShadow(uid).map((a) => [a.id, a.unlocked_at])));
+              setDay(loadDay(uid, date) ?? { date, foods: [], waterMl: 0, done: [] });
+              setSyncPending(pendingCount(uid));
+              // mantiene la sesión aparente sin user real
+              setUser((u) => u ?? { id: uid, name: sp.profile.name, email: '', provider: 'offline' });
+              return;
+            }
+          }
+        } catch { /* ignore */ }
+        throw e;
       } else throw e;
     }
   };
 
   useEffect(() => {
     refresh().catch(() => undefined).finally(() => setLoading(false));
+    const onOnline = () => refreshSync().catch(() => undefined);
+    window.addEventListener('online', onOnline);
+    const iv = window.setInterval(() => refreshSync().catch(() => undefined), 5 * 60 * 1000);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.clearInterval(iv);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -181,15 +247,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const supported = isNative() && stepsPluginAvailable();
     setStepsSupported(supported);
     if (!user || !supported) {
-      if (!supported) setSteps(null);
+      if (!supported) { setSteps(null); setStepsError(null); }
       return;
     }
     try {
       const s = await getStepsToday(user.id);
       setSteps(s);
+      setStepsError(null);
       if (s >= 10000) await unlock('pasos_10k', achievements);
-    } catch {
-      setSteps(null); // p. ej. permiso denegado: el tile invita a activarlo
+    } catch (e) {
+      setSteps(null);
+      const code = (e as Error)?.message || 'error';
+      setStepsError(
+        code === 'permiso_denegado'
+          ? 'Permiso denegado: actívalo en Ajustes del teléfono y toca de nuevo.'
+          : code === 'sin_sensor'
+            ? 'Este teléfono no tiene sensor de pasos.'
+            : 'Toca para intentar de nuevo.',
+      );
     }
   };
 
@@ -242,6 +317,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const s = await db.stats();
     setActiveDays(s.activeDays);
     await evaluate(d, targets, s.activeDays, achievements);
+    refreshSync().catch(() => undefined);
   };
 
   const deleteFood = async (id: number) => {
@@ -256,6 +332,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const s = await db.stats();
     setActiveDays(s.activeDays);
     await evaluate({ ...d, waterMl: total }, targets, s.activeDays, achievements);
+    refreshSync().catch(() => undefined);
   };
 
   const toggleExercise = async (exercise: string, sessionSize: number) => {
@@ -269,6 +346,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const s = await db.stats();
     setActiveDays(s.activeDays);
     await refreshHistory().catch(() => undefined);
+    refreshSync().catch(() => undefined);
   };
 
   const resetAll = async () => {
@@ -303,7 +381,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         serverUrl, setServerUrl, useOfficialServer,
         register, login, googleSignIn, logout,
         completeOnboarding, refresh, logFood, deleteFood, logWater, toggleExercise, resetAll, unlockMedal,
-        history, weights, streak, weekWorkouts, refreshHistory, setWeight, steps, stepsSupported, refreshSteps,
+        history, weights, streak, weekWorkouts, refreshHistory, setWeight, steps, stepsSupported, stepsError, refreshSteps, syncPending, refreshSync,
+        getInviteCode: () => onlineDb().getInviteCode(),
+        addFriend: (c) => onlineDb().addFriend(c),
+        getFriends: () => onlineDb().getFriends(),
+        getLeaderboard: () => onlineDb().getLeaderboard(),
       }}
     >
       {children}

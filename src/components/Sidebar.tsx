@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Dumbbell, Salad, User, Trash2, LogOut, TrendingUp } from 'lucide-react';
+import { LayoutDashboard, Dumbbell, Salad, User, Trash2, LogOut, TrendingUp, Users, BookOpen } from 'lucide-react';
 import Logo from './Logo';
 import { useStore } from '../lib/store';
 
@@ -8,11 +8,13 @@ const links = [
   { to: '/rutinas', label: 'Rutinas', icon: Dumbbell },
   { to: '/dieta', label: 'Dieta', icon: Salad },
   { to: '/progreso', label: 'Progreso', icon: TrendingUp },
+  { to: '/comunidad', label: 'Comunidad', icon: Users },
+  { to: '/biblioteca', label: 'Biblioteca', icon: BookOpen },
   { to: '/perfil', label: 'Perfil', icon: User },
 ];
 
 export default function Sidebar() {
-  const { user, logout, resetAll } = useStore();
+  const { user, logout, resetAll, syncPending, refreshSync } = useStore();
   return (
     <aside className="hidden md:flex w-[248px] shrink-0 flex-col gap-2 p-5 glass-strong m-4 mr-0">
       <div className="px-2 py-2"><Logo size={38} /></div>
@@ -54,6 +56,17 @@ export default function Sidebar() {
         ))}
       </nav>
       <div className="mt-auto flex flex-col gap-1.5">
+        {syncPending > 0 ? (
+          <button onClick={() => refreshSync()} title="Reintentar ahora"
+            className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm text-fire hover:bg-fire/10 transition-all">
+            <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-fire opacity-60" /><span className="relative inline-flex rounded-full h-2 w-2 bg-fire" /></span>
+            Pendiente ({syncPending})
+          </button>
+        ) : (
+          <p className="flex items-center gap-3 rounded-xl px-4 py-2 text-xs text-muted">
+            <span className="h-2 w-2 rounded-full bg-emerald" /> Sincronizado
+          </p>
+        )}
         <button
           onClick={() => logout()}
           className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm text-muted hover:text-white hover:bg-white/5 transition-all"

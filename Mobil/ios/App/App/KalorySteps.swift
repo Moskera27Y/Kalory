@@ -7,7 +7,10 @@ public class KalorySteps: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "KalorySteps"
     public let jsName = "KalorySteps"
     public let pluginMethods: [CAPPluginMethod] = [
-        CAPPluginMethod(name: "getToday", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "getToday", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getWeight", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getSleep", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "saveWorkout", returnType: CAPPluginReturnPromise)
     ]
 
     private let store = HKHealthStore()
@@ -42,5 +45,85 @@ public class KalorySteps: CAPPlugin, CAPBridgedPlugin {
             call.resolve(["steps": Int(total)])
         }
         store.execute(query)
+    }
+
+    /// Último peso corporal registrado en Salud (kg).
+    @objc func getWeight(_ call: CAPPluginCall) {
+        guard let wt = HKObjectType.quantityType(forIdentifier: .bodyMass) else {
+            call.reject("sin_tipo")
+            return
+        }
+        store.requestAuthorization(toShare: [], read: [wt]) { [weak self] granted, _ in
+            guard granted, let self = self else {
+                call.reject("permiso_denegado")
+                return
+            }
+            let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+            let q = HKSampleQuery(sampleType: wt, predicate: nil, limit: 1, sortDescriptors: [sort]) { _, samples, _ in
+                guard let s = samples?.first as? HKQuantitySample else {
+                    call.resolve(["kg": 0])
+                    return
+                }
+                let kg = s.quantity.doubleValue(for: HKUnit.gramUnit(with: .kilo))
+                call.resolve(["kg": kg])
+            }
+            self.store.execute(q)
+        }
+    }
+
+    /// Horas dormidas en las últimas 24h (suma de fases de sueño).
+    @objc func getSleep(_ call: CAPPluginCall) {
+        guard let sl = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
+            call.reject("sin_tipo")
+            return
+        }
+        store.requestAuthorization(toShare: [], read: [sl]) { [weak self] granted, _ in
+            guard granted, let self = self else {
+                call.reject("permiso_denegado")
+                return
+            }
+            let start = Date().addingTimeInterval(-24 * 3600)
+            let predicate = HKQuery.predicateForSamples(withStart: start, end: Date(), options: .strictStartDate)
+            let q = HKSampleQuery(sampleType: sl, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, _ in
+                var secs = 0.0
+                for case let s as HKCategorySample in samples ?? [] {
+                    switch s.value {
+                    case HKCategoryValueSleepAnalysis.asleepCore.rawValue,
+                         HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
+                         HKCategoryValueSleepAnalysis.asleepREM.rawValue,
+                         HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue:
+                        secs += s.endDate.timeIntervalSince(s.startDate)
+                    default:
+                        break
+                    }
+                }
+                call.resolve(["hours": secs / 3600.0])
+            }
+            self.store.execute(q)
+        }
+    }
+
+    /// Guarda el entreno en Salud (kcal estimadas, inicio/fin en ms).
+    @objc func saveWorkout(_ call: CAPPluginCall) {
+        guard let wt = HKObjectType.workoutType() as? HKWorkoutType else {
+            call.reject("sin_tipo")
+            return
+        }
+        store.requestAuthorization(toShare: [wt], read: []) { [weak self] granted, _ in
+            guard granted, let self = self else {
+                call.reject("permiso_denegado")
+                return
+            }
+            let startMs = call.getDouble("startMs") ?? Date().addingTimeInterval(-2700).timeIntervalSince1970 * 1000
+            let endMs = call.getDouble("endMs") ?? Date().timeIntervalSince1970 * 1000
+            let kcal = call.getDouble("kcal") ?? 0
+            let start = Date(timeIntervalSince1970: startMs / 1000)
+            let end = Date(timeIntervalSince1970: endMs / 1000)
+            let energy = HKQuantity(unit: HKUnit.kilocalorie(), doubleValue: kcal)
+            let workout = HKWorkout(activityType: .traditionalStrengthTraining, start: start, end: end, duration: end.timeIntervalSince(start), totalEnergyBurned: energy, totalDistance: nil, metadata: [HKMetadataKeyWasUserEntered: true])
+            self.store.save(workout) { ok, _ in
+                ok ? call.resolve(["ok": true]) : call.reject("no_guardado")
+            }
+        }
     }
 }

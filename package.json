@@ -1,7 +1,7 @@
 {
   "name": "kalory",
   "private": true,
-  "version": "1.4.0",
+  "version": "1.5.0",
   "type": "module",
   "main": "electron/main.cjs",
   "description": "Kalory Health & Fitness — Desktop fitness app",
@@ -14,6 +14,7 @@
     "dist:win": "npm run build && electron-builder --win --publish never"
   },
   "dependencies": {
+    "@zxing/browser": "^0.2.1",
     "framer-motion": "^11.11.17",
     "lucide-react": "^0.454.0",
     "react": "^19.0.0",
@@ -46,9 +47,14 @@
       "node_modules/sql.js/**/*",
       "package.json"
     ],
-    "asarUnpack": ["**/*.wasm"],
+    "asarUnpack": [
+      "**/*.wasm"
+    ],
     "win": {
-      "target": ["portable", "nsis"],
+      "target": [
+        "portable",
+        "nsis"
+      ],
       "icon": "assets/icon.ico"
     },
     "portable": {

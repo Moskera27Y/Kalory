@@ -86,6 +86,21 @@ export interface DayHistory {
   weight: number | null;
 }
 
+export interface WeekScore {
+  days: number;
+  works: number;
+  medals: number;
+  score: number;
+}
+
+export interface FriendInfo extends AuthUser {
+  week: WeekScore;
+}
+
+export interface BoardRow extends FriendInfo {
+  me: boolean;
+}
+
 export interface AuthUser {
   id: number;
   name: string;

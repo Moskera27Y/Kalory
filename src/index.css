@@ -6,6 +6,14 @@
 
 html, body, #root { height: 100%; }
 
+/* Sin selección de texto en la app (solo en campos de escritura) */
+* { -webkit-user-select: none; user-select: none; }
+input, textarea, select, [contenteditable] {
+  -webkit-user-select: text; user-select: text;
+}
+img { -webkit-user-drag: none; pointer-events: none; }
+button img, a img { pointer-events: none; }
+
 body {
   @apply text-mist font-sans antialiased overflow-hidden;
   background: #070B16;

@@ -87,6 +87,12 @@ async function ready() {
       created_at TEXT NOT NULL,
       PRIMARY KEY(user_id, date)
     );
+    CREATE TABLE IF NOT EXISTS friendships(
+      user_id INTEGER NOT NULL,
+      friend_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY(user_id, friend_id)
+    );
     CREATE INDEX IF NOT EXISTS idx_food_user_date ON food_log(user_id, date);
     CREATE INDEX IF NOT EXISTS idx_water_user_date ON water_log(user_id, date);
   `);
@@ -369,7 +375,7 @@ app.get('/api/export', auth, async (req, res) => {
 });
 
 // ---------- versión (aviso de actualización en la app) ----------
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
 app.get('/api/version', (req, res) => {
   res.json({
     ok: true,
@@ -377,6 +383,75 @@ app.get('/api/version', (req, res) => {
     url: 'https://github.com/Moskera27Y/Kalory/releases',
     notes: 'Descarga la última versión desde la página de releases.',
   });
+});
+
+// ---------- comunidad: amigos y ranking semanal ----------
+function inviteCode(uid) {
+  return 'KAL-' + Number(uid).toString(36).toUpperCase().padStart(6, '0');
+}
+function uidFromCode(code) {
+  const m = /^KAL-([0-9A-Z]{1,6})$/i.exec(String(code || '').trim());
+  if (!m) return null;
+  const id = parseInt(m[1], 36);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
+function weekStart() {
+  const n = new Date();
+  const dow = (n.getDay() + 6) % 7;
+  n.setDate(n.getDate() - dow);
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+}
+function weekScore(uid) {
+  const ws = weekStart();
+  const days = rows(`SELECT COUNT(*) AS n FROM (
+    SELECT date FROM food_log WHERE user_id=? AND date>=?
+    UNION SELECT date FROM water_log WHERE user_id=? AND date>=? AND ml > 0
+    UNION SELECT date FROM workout_log WHERE user_id=? AND date>=?)`, [uid, ws, uid, ws, uid, ws])[0].n;
+  const works = rows('SELECT COUNT(*) AS n FROM workout_log WHERE user_id=? AND date>=?', [uid, ws])[0].n;
+  const medals = rows('SELECT COUNT(*) AS n FROM achievement WHERE user_id=?', [uid])[0].n;
+  return { days, works, medals, score: days * 10 + works * 5 + medals * 2 };
+}
+
+app.get('/api/social/code', auth, async (req, res) => {
+  await ready();
+  res.json({ ok: true, code: inviteCode(req.uid) });
+});
+
+app.post('/api/social/add', auth, async (req, res) => {
+  await ready();
+  const fid = uidFromCode(req.body.code);
+  if (!fid) return res.status(400).json({ ok: false, error: 'codigo_invalido' });
+  if (fid === req.uid) return res.status(400).json({ ok: false, error: 'eres_tu' });
+  const exists = rows('SELECT * FROM users WHERE id=?', [fid])[0];
+  if (!exists) return res.status(404).json({ ok: false, error: 'no_existe' });
+  run('INSERT INTO friendships(user_id,friend_id,created_at) VALUES(?,?,?) ON CONFLICT(user_id,friend_id) DO NOTHING', [req.uid, fid, now()]);
+  run('INSERT INTO friendships(user_id,friend_id,created_at) VALUES(?,?,?) ON CONFLICT(user_id,friend_id) DO NOTHING', [fid, req.uid, now()]);
+  persist();
+  res.json({ ok: true, friend: pub(exists) });
+});
+
+app.get('/api/social/friends', auth, async (req, res) => {
+  await ready();
+  const ids = rows('SELECT friend_id FROM friendships WHERE user_id=?', [req.uid]).map((r) => r.friend_id);
+  res.json({
+    ok: true,
+    friends: ids.map((id) => {
+      const u = rows('SELECT * FROM users WHERE id=?', [id])[0];
+      return u ? { ...pub(u), week: weekScore(id) } : null;
+    }).filter(Boolean),
+  });
+});
+
+app.get('/api/social/leaderboard', auth, async (req, res) => {
+  await ready();
+  const ids = rows('SELECT friend_id FROM friendships WHERE user_id=?', [req.uid]).map((r) => r.friend_id);
+  const all = [req.uid, ...ids];
+  const rows_ = all.map((id) => {
+    const u = rows('SELECT * FROM users WHERE id=?', [id])[0];
+    return u ? { ...pub(u), me: id === req.uid, week: weekScore(id) } : null;
+  }).filter(Boolean);
+  rows_.sort((a, b) => b.week.score - a.week.score);
+  res.json({ ok: true, board: rows_ });
 });
 
 // ---------- admin ----------

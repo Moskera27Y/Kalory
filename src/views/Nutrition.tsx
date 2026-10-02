@@ -1,9 +1,53 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Search, Plus, Trash2, ScanBarcode, Loader2, History, Star } from 'lucide-react';
+import { Search, Plus, Trash2, ScanBarcode, Loader2, History, Star, BookOpen, ShoppingCart, CalendarDays, Camera, X } from 'lucide-react';
 import { GlassCard } from '../components/ui';
 import { useStore } from '../lib/store';
 import { getDb } from '../lib/db';
+import { isNative } from '../lib/steps';
+import { buildWeekMenu, shoppingList } from '../lib/recipes';
+
+/** Escáner con la cámara (solo móvil): detecta el código en vivo. */
+function BarcodeScanner({ onCode, onClose }: { onCode: (c: string) => void; onClose: () => void }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let stopped = false;
+    let resetFn: (() => void) | null = null;
+    (async () => {
+      try {
+        const { BrowserMultiFormatReader } = await import('@zxing/browser');
+        const reader = new BrowserMultiFormatReader() as unknown as {
+          reset?: () => void;
+          decodeFromVideoDevice: (id: string, el: HTMLVideoElement, cb: (r: { getText: () => string } | undefined) => void) => Promise<void>;
+        };
+        resetFn = () => { try { reader.reset?.(); } catch { /* ignore */ } };
+        const devices = await BrowserMultiFormatReader.listVideoInputDevices();
+        const back = devices.find((d) => /back|rear|trasera|environment/i.test(d.label)) ?? devices[0];
+        if (!back) { setError('Sin cámara disponible.'); return; }
+        await reader.decodeFromVideoDevice(back.deviceId, videoRef.current!, (result) => {
+          if (result && !stopped) {
+            stopped = true;
+            onCode(result.getText());
+          }
+        });
+      } catch {
+        if (!stopped) setError('No se pudo abrir la cámara. Revisa el permiso.');
+      }
+    })();
+    return () => { stopped = true; try { resetFn?.(); } catch { /* ignore */ } };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <div className="relative mt-2 overflow-hidden rounded-xl border border-emerald/30 bg-black">
+      <video ref={videoRef} className="h-52 w-full object-cover" playsInline muted />
+      <div className="pointer-events-none absolute inset-x-8 top-1/2 h-20 -translate-y-1/2 rounded-lg border-2 border-fire" />
+      <button onClick={onClose} className="absolute right-2 top-2 rounded-lg bg-black/60 p-1.5 text-white"><X size={16} /></button>
+      {error ? <p className="absolute inset-x-0 bottom-2 text-center text-xs text-fire">{error}</p>
+        : <p className="absolute inset-x-0 bottom-2 text-center text-[11px] text-white/80">Apunta al código de barras…</p>}
+    </div>
+  );
+}
 
 const CATALOG = [
   { name: 'Pechuga de pollo 150g', kcal: 248, p: 46, c: 0, f: 5 },
@@ -19,7 +63,8 @@ const CATALOG = [
 const MEALS = ['Desayuno', 'Almuerzo', 'Cena', 'Snack', 'Extra'];
 
 export default function Nutrition() {
-  const { day, logFood, deleteFood, consumed } = useStore();
+  const { day, logFood, deleteFood, consumed, profile } = useStore();
+  const [view, setView] = useState<'diario' | 'menu'>('diario');
   const [q, setQ] = useState('');
   const [meal, setMeal] = useState('Almuerzo');
   const [custom, setCustom] = useState({ name: '', kcal: '', p: '', c: '', f: '' });
@@ -28,6 +73,7 @@ export default function Nutrition() {
   const [looking, setLooking] = useState(false);
   const [found, setFound] = useState<null | { name: string; kcal100: number; p100: number; c100: number; f100: number }>(null);
   const [codeError, setCodeError] = useState('');
+  const [scanning, setScanning] = useState(false);
   const [favs, setFavs] = useState<{ name: string; kcal: number; protein: number; carbs: number; fat: number; n: number }[]>([]);
   const [repeatMsg, setRepeatMsg] = useState('');
 
@@ -86,8 +132,8 @@ export default function Nutrition() {
   const grouped = MEALS.map((m) => ({ meal: m, items: day.foods.filter((f) => f.meal === m) })).filter((g) => g.items.length > 0);
 
   /** Busca el código de barras en Open Food Facts (datos reales del producto). */
-  const lookupCode = async () => {
-    const c = code.trim();
+  const lookupCode = async (raw?: string) => {
+    const c = (raw ?? code).trim();
     if (!c) return;
     setLooking(true);
     setFound(null);
@@ -138,6 +184,17 @@ export default function Nutrition() {
         <p className="text-sm text-muted">Hoy llevas <b className="text-white">{Math.round(consumed).toLocaleString('es')} kcal</b> en {day.foods.length} registros</p>
       </div>
 
+      <div className="flex gap-2">
+        <div className="grid grid-cols-2 gap-1 rounded-xl bg-white/5 p-1">
+          <button onClick={() => setView('diario')} className={`rounded-lg px-4 py-2 text-xs font-bold ${view === 'diario' ? 'bg-emerald/20 text-white' : 'text-muted'}`}>Diario</button>
+          <button onClick={() => setView('menu')} className={`rounded-lg px-4 py-2 text-xs font-bold ${view === 'menu' ? 'bg-fire/20 text-white' : 'text-muted'}`}>Menú semanal</button>
+        </div>
+      </div>
+
+      {view === 'menu' ? (
+        <MenuSemanal />
+      ) : (
+      <>
       <div className="flex gap-2 flex-wrap">
         {MEALS.map((m) => (
           <button key={m} onClick={() => setMeal(m)}
@@ -181,6 +238,15 @@ export default function Nutrition() {
           </div>
 
           <p className="mt-5 text-xs uppercase tracking-widest text-muted">Código de barras · {meal}</p>
+          {isNative() && (
+            scanning ? (
+              <BarcodeScanner onCode={(c) => { setCode(c); setScanning(false); lookupCode(c); }} onClose={() => setScanning(false)} />
+            ) : (
+              <button onClick={() => setScanning(true)} className="chip mt-2 !text-xs w-full flex items-center justify-center gap-2 !border-emerald/40 text-emerald">
+                <Camera size={14} /> Escanear con la cámara
+              </button>
+            )
+          )}
           <div className="mt-2 flex gap-2">
             <div className="relative flex-1">
               <ScanBarcode size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
@@ -188,7 +254,7 @@ export default function Nutrition() {
                 onKeyDown={(e) => { if (e.key === 'Enter') lookupCode(); }}
                 inputMode="numeric" placeholder="Ej. 8410076470903" className="input-kalory !pl-9 text-sm" />
             </div>
-            <motion.button whileTap={{ scale: 0.97 }} onClick={lookupCode} disabled={looking} className="btn-emerald !px-4 !py-2 text-sm disabled:opacity-50">
+            <motion.button whileTap={{ scale: 0.97 }} onClick={() => lookupCode()} disabled={looking} className="btn-emerald !px-4 !py-2 text-sm disabled:opacity-50">
               {looking ? <Loader2 size={16} className="animate-spin" /> : 'Buscar'}
             </motion.button>
           </div>
@@ -251,6 +317,99 @@ export default function Nutrition() {
           ))}
         </div>
       </div>
+      </>
+      )}
+    </div>
+  );
+}
+
+function MenuSemanal() {
+  const { profile, targets, logFood } = useStore();
+  const [dayIdx, setDayIdx] = useState(0);
+  const [added, setAdded] = useState('');
+  const menu = useMemo(
+    () => buildWeekMenu(profile?.diet ?? 'omnivoro', profile?.mealsPerDay ?? 4),
+    [profile?.diet, profile?.mealsPerDay],
+  );
+  const list = useMemo(() => shoppingList(menu), [menu]);
+  const d = menu[dayIdx];
+
+  const addDay = async () => {
+    for (const it of d.items) {
+      await logFood({
+        name: it.recipe.name, kcal: it.recipe.kcal,
+        protein: it.recipe.p, carbs: it.recipe.c, fat: it.recipe.f,
+        meal: it.meal === 'Extra' ? 'Extra' : it.meal,
+      });
+    }
+    setAdded(`Añadido el ${d.day} al diario de hoy.`);
+    setTimeout(() => setAdded(''), 3000);
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <GlassCard glow>
+        <div className="flex items-center gap-2">
+          <BookOpen size={17} className="text-fire" />
+          <p className="text-sm font-bold">Menú según tu dieta ({profile?.diet}) y {profile?.mealsPerDay} comidas/día</p>
+        </div>
+        <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1">
+          {menu.map((m, i) => (
+            <button key={m.day} onClick={() => setDayIdx(i)}
+              className={`chip !text-xs whitespace-nowrap shrink-0 ${i === dayIdx ? 'border-fire/60 bg-fire/15 text-white' : 'text-muted'}`}>
+              {m.day.slice(0, 3)} · {m.kcal}
+            </button>
+          ))}
+        </div>
+        <div className="mt-3 flex flex-col gap-1.5">
+          {d.items.map((it, i) => (
+            <div key={i} className="rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2.5">
+              <div className="flex justify-between text-xs">
+                <b>{it.recipe.name}</b>
+                <b className="tabular-nums ml-2">{it.recipe.kcal} kcal</b>
+              </div>
+              <p className="mt-0.5 text-[11px] text-muted">{it.meal} · P {it.recipe.p}g · C {it.recipe.c}g · G {it.recipe.f}g</p>
+              <p className="text-[11px] text-muted/70 truncate">{it.recipe.ingredients.join(' · ')}</p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 flex items-center gap-2">
+          <motion.button whileTap={{ scale: 0.97 }} onClick={addDay} className="btn-emerald !py-2.5 text-sm flex-1">
+            Añadir {d.day} al diario de hoy ({d.kcal} kcal)
+          </motion.button>
+        </div>
+        {added && <p className="mt-2 text-xs text-emerald">{added}</p>}
+        {targets && <p className="mt-2 text-[11px] text-muted">Tu meta: {targets.calories} kcal · P {targets.protein}g · C {targets.carbs}g · G {targets.fat}g</p>}
+      </GlassCard>
+
+      <GlassCard>
+        <div className="flex items-center gap-2">
+          <ShoppingCart size={17} className="text-emerald" />
+          <p className="text-sm font-bold">Lista de compras semanal</p>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {list.slice(0, 30).map((l) => (
+            <span key={l.item} className="rounded-lg bg-white/5 border border-white/10 px-2.5 py-1.5 text-[11px]">
+              {l.item} {l.n > 1 && <b className="text-emerald">×{l.n}</b>}
+            </span>
+          ))}
+        </div>
+      </GlassCard>
+
+      <GlassCard>
+        <div className="flex items-center gap-2">
+          <CalendarDays size={17} className="text-muted" />
+          <p className="text-xs uppercase tracking-widest text-muted">Toda la semana</p>
+        </div>
+        <div className="mt-2 grid grid-cols-7 gap-1 text-center max-sm:grid-cols-4">
+          {menu.map((m) => (
+            <div key={m.day} className="rounded-lg bg-white/[0.03] border border-white/5 p-1.5">
+              <p className="text-[10px] font-bold">{m.day.slice(0, 3)}</p>
+              <p className="text-[11px] font-extrabold tabular-nums">{m.kcal}</p>
+            </div>
+          ))}
+        </div>
+      </GlassCard>
     </div>
   );
 }
