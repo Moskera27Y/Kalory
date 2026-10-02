@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Pause, RotateCcw, CheckCircle2, X, Printer, Zap, Star, PartyPopper, BookOpen } from 'lucide-react';
+import { Play, Pause, RotateCcw, CheckCircle2, X, Zap, Star, PartyPopper, BookOpen } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { GlassCard } from '../components/ui';
 import { useStore } from '../lib/store';
@@ -312,14 +312,13 @@ export default function Workouts() {
             </p>
           )}
         </div>
-        <div className="ml-auto flex gap-2 no-print">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto no-print">
           <div className="grid grid-cols-2 gap-1 rounded-xl bg-white/5 p-1">
             <button onClick={() => setTab('rutina')} className={`rounded-lg px-4 py-2 text-xs font-bold ${tab === 'rutina' ? 'bg-emerald/20 text-white' : 'text-muted'}`}>Rutina</button>
             <button onClick={() => setTab('hiit')} className={`rounded-lg px-4 py-2 text-xs font-bold ${tab === 'hiit' ? 'bg-fire/20 text-white' : 'text-muted'}`}>HIIT</button>
           </div>
-          <button onClick={() => window.print()} title="Imprimir / guardar PDF" className="chip !py-2 flex items-center gap-1.5 text-xs"><Printer size={14} /> Imprimir</button>
-          <Link to="/biblioteca" className="chip !py-2 flex items-center gap-1.5 text-xs !border-emerald/40 text-emerald"><BookOpen size={14} /> Biblioteca</Link>
-          <button onClick={() => { setSessionStart(Date.now()); setSession(true); }} className="btn-fire !py-2 text-sm flex items-center gap-2"><Play size={15} /> Iniciar sesión</button>
+          <Link to="/biblioteca" className="chip !py-2 flex flex-1 items-center justify-center gap-1.5 text-xs !border-emerald/40 text-emerald sm:flex-none"><BookOpen size={14} /> Biblioteca</Link>
+          <button onClick={() => { setSessionStart(Date.now()); setSession(true); }} className="btn-fire !py-2 text-sm flex flex-1 items-center justify-center gap-2 sm:flex-none"><Play size={15} /> Iniciar sesión</button>
         </div>
       </div>
 
