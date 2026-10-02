@@ -57,7 +57,7 @@ export default function Welcome() {
   };
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="min-h-full">
       <div className="mx-auto grid min-h-full max-w-6xl items-center gap-6 px-4 py-6 sm:gap-10 sm:px-6 sm:py-10 lg:grid-cols-2">
         {/* Hero */}
         <motion.div initial={{ opacity: 0, x: -32 }} animate={{ opacity: 1, x: 0 }} transition={{ type: 'spring', stiffness: 120, damping: 20 }}>

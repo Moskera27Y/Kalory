@@ -113,7 +113,7 @@ function AnimatedRoutes() {
       <Sidebar />
       <VersionBanner />
       <MedalToast />
-      <main className="relative flex-1 overflow-y-auto p-4 md:p-6 pb-48 md:pb-6">
+      <main className="relative min-h-0 flex-1 overflow-y-auto touch-pan-y p-4 md:p-6 pb-48 md:pb-6">
         <AnimatePresence mode="wait">
           <Routes location={location} key={location.pathname}>
             <Route path="/" element={<PageTransition><Dashboard /></PageTransition>} />
