@@ -313,15 +313,48 @@ export default function Dashboard() {
               const mine = user ? listSleep(user.id) : [];
               const last = mine[0];
               const avg = user ? avgSleep(user.id) : null;
+              const h = last?.hours ?? 0;
+              const score = last ? Math.min(100, Math.round((h / 8) * 100)) : 0;
+              const verdict = !last ? null
+                : h >= 8 ? { t: 'Excelente', c: 'text-emerald', tip: 'Recuperación total. Mantén este horario.' }
+                : h >= 7 ? { t: 'Bueno', c: 'text-emerald', tip: 'Bien. Intenta acostarte 30 min antes.' }
+                : h >= 6 ? { t: 'Regular', c: 'text-fire', tip: 'Te falta descanso: evita pantallas 1h antes de dormir.' }
+                : { t: 'Malo', c: 'text-fire-hot', tip: 'Prioriza dormir 7-8h: tu progreso depende de ello.' };
+              const R = 30;
+              const C = 2 * Math.PI * R;
+              const col = score >= 75 ? '#10B981' : score >= 50 ? '#F59E0B' : '#EF4444';
               return (
                 <>
-                  {last && <p className="mt-2 text-xs text-muted">Anoche: <b className="text-white">{last.hours} h</b> ({last.bed} → {last.wake}){avg != null ? ` · prom. ${avg} h` : ''}</p>}
+                  <div className="mt-2 flex items-center gap-3">
+                    <div className="relative h-[76px] w-[76px] shrink-0">
+                      <svg viewBox="0 0 76 76" className="h-full w-full -rotate-90">
+                        <circle cx="38" cy="38" r={R} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="8" />
+                        <motion.circle cx="38" cy="38" r={R} fill="none" stroke={col} strokeWidth="8" strokeLinecap="round"
+                          strokeDasharray={C} initial={{ strokeDashoffset: C }} animate={{ strokeDashoffset: C * (1 - score / 100) }}
+                          transition={{ type: 'spring', stiffness: 60, damping: 18 }} />
+                      </svg>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center">
+                        <span className="font-display text-lg font-extrabold tabular-nums">{last ? score : '–'}</span>
+                      </div>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      {verdict ? (
+                        <>
+                          <p className={`text-sm font-extrabold ${verdict.c}`}>{verdict.t} · {h} h</p>
+                          <p className="mt-0.5 text-[11px] text-muted leading-snug">{verdict.tip}</p>
+                        </>
+                      ) : (
+                        <p className="text-xs text-muted">Registra tu noche para puntuar tu descanso.</p>
+                      )}
+                      {avg != null && <p className="mt-1 text-[11px] text-muted">Promedio 7 días: <b className="text-white">{avg} h</b></p>}
+                    </div>
+                  </div>
                   <div className="mt-2 grid grid-cols-2 gap-2">
                     <label className="grid gap-1 text-[11px] text-muted">Acostada
-                      <input type="time" value={bed} onChange={(e) => setBed(e.target.value)} className="rounded-lg bg-white/5 border border-white/10 px-2 py-1.5 text-xs text-center tabular-nums" />
+                      <input type="time" value={bed} onChange={(e) => setBed(e.target.value)} className="rounded-lg bg-white/5 border border-white/10 px-2 py-1.5 text-xs text-center tabular-nums h-9" />
                     </label>
                     <label className="grid gap-1 text-[11px] text-muted">Despertada
-                      <input type="time" value={wake} onChange={(e) => setWake(e.target.value)} className="rounded-lg bg-white/5 border border-white/10 px-2 py-1.5 text-xs text-center tabular-nums" />
+                      <input type="time" value={wake} onChange={(e) => setWake(e.target.value)} className="rounded-lg bg-white/5 border border-white/10 px-2 py-1.5 text-xs text-center tabular-nums h-9" />
                     </label>
                   </div>
                   <motion.button whileTap={{ scale: 0.97 }} onClick={() => { if (user) { saveSleep(user.id, bed, wake); setSleepTick((x) => x + 1); } }} className="btn-emerald mt-2 w-full !py-2 text-xs">

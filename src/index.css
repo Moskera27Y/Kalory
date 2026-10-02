@@ -136,6 +136,14 @@ body {
   input, select, textarea { font-size: 16px; }
 }
 
+/* En teléfonos el scroll lo lleva el documento (momentum nativo iOS,
+   sin rebotes que tapen el final). Escritorio intacto. */
+@media (pointer: coarse) and (max-width: 768px) {
+  .app-bg { height: auto !important; min-height: 100dvh; overflow: visible !important; }
+  .app-bg > div.relative.z-10 { height: auto !important; min-height: 100dvh; }
+  main { overflow: visible !important; }
+}
+
 @layer components {
   .glass {
     @apply bg-white/[0.04] backdrop-blur-md border border-white/10 shadow-card rounded-2xl;

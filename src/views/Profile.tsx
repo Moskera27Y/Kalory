@@ -9,7 +9,7 @@ import { GlassCard } from '../components/ui';
 import { MEDALS } from '../lib/achievements';
 import { calcBMR } from '../lib/calculations';
 import { loadPrefs, savePrefs, type NotifyPrefs } from '../lib/reminders';
-import { downloadFile, weeklyCSV } from '../lib/report';
+import { downloadFile, weeklyCSV, APP_VERSION } from '../lib/report';
 import { daysAgo, getDb, todayStr } from '../lib/db';
 import { useStore } from '../lib/store';
 
@@ -169,7 +169,7 @@ export default function Profile() {
                         setPrefs(next);
                         savePrefs(next);
                       }}
-                      className="w-[104px] rounded-lg bg-white/5 border border-white/10 px-2 py-1.5 text-xs"
+                      className="w-[104px] h-9 shrink-0 rounded-lg bg-white/5 border border-white/10 px-2 text-xs text-center tabular-nums"
                     />
                   )}
                 </div>
@@ -190,7 +190,7 @@ export default function Profile() {
                           setPrefs(next);
                           savePrefs(next);
                         }}
-                        className="w-full rounded-lg bg-white/5 border border-white/10 px-2 py-1.5 text-xs text-white"
+                        className="w-full h-9 rounded-lg bg-white/5 border border-white/10 px-1 text-xs text-white text-center tabular-nums"
                       />
                     </label>
                   ))}
@@ -258,6 +258,7 @@ export default function Profile() {
               )}
             </div>
             {dbMsg && <p className="mt-2 text-[11px] text-emerald">{dbMsg}</p>}
+            <p className="mt-3 text-center text-[11px] text-muted">Kalory v{APP_VERSION}</p>
           </GlassCard>
 
           <GlassCard glow>
