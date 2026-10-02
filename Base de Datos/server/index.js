@@ -195,23 +195,121 @@ app.post('/api/auth/google', async (req, res) => {
   await ready();
   try {
     const g = await verifyGoogleIdToken(String(req.body.idToken || ''));
-    let u = rows('SELECT * FROM users WHERE google_sub=?', [g.sub])[0];
-    if (!u) {
-      const byEmail = rows('SELECT * FROM users WHERE email=?', [g.email.toLowerCase()])[0];
-      if (byEmail) {
-        run('UPDATE users SET google_sub=? WHERE id=?', [g.sub, byEmail.id]);
-        u = rows('SELECT * FROM users WHERE id=?', [byEmail.id])[0];
-      } else {
-        run('INSERT INTO users(name,email,google_sub,provider,created_at) VALUES(?,?,?,?,?)',
-          [g.name, g.email.toLowerCase(), g.sub, 'google', now()]);
-        u = rows('SELECT * FROM users WHERE google_sub=?', [g.sub])[0];
-      }
-    }
+    const u = await findOrCreateGoogleUser(g);
     persist();
     res.json({ ok: true, token: sign(u.id), user: pub(u) });
   } catch (e) {
     res.status(401).json({ ok: false, error: 'google_invalido' });
   }
+});
+
+async function findOrCreateGoogleUser(g) {
+  let u = rows('SELECT * FROM users WHERE google_sub=?', [g.sub])[0];
+  if (!u) {
+    const byEmail = rows('SELECT * FROM users WHERE email=?', [g.email.toLowerCase()])[0];
+    if (byEmail) {
+      run('UPDATE users SET google_sub=? WHERE id=?', [g.sub, byEmail.id]);
+      u = rows('SELECT * FROM users WHERE id=?', [byEmail.id])[0];
+    } else {
+      run('INSERT INTO users(name,email,google_sub,provider,created_at) VALUES(?,?,?,?,?)',
+        [g.name, g.email.toLowerCase(), g.sub, 'google', now()]);
+      u = rows('SELECT * FROM users WHERE google_sub=?', [g.sub])[0];
+    }
+  }
+  return u;
+}
+
+// ---------- Google en móvil: navegador del sistema + sondeo ----------
+// El WebView no puede abrir Google (403 disallowed_useragent): se usa el
+// navegador del sistema y la app sondea hasta completar el acceso.
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
+function publicBase() {
+  if (process.env.PUBLIC_URL) return String(process.env.PUBLIC_URL).replace(/\/+$/, '');
+  if (process.env.RAILWAY_PUBLIC_DOMAIN) return `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
+  return '';
+}
+const pendingGoogle = new Map(); // state -> { createdAt, token?, user? }
+setInterval(() => {
+  const nowMs = Date.now();
+  for (const [k, v] of pendingGoogle) {
+    if (nowMs - v.createdAt > 6 * 60 * 1000) pendingGoogle.delete(k);
+  }
+}, 60 * 1000).unref?.();
+
+app.post('/api/auth/google/start', async (req, res) => {
+  await ready();
+  const base = publicBase();
+  if (!base) return res.status(500).json({ ok: false, error: 'sin_public_url' });
+  const state = crypto.randomBytes(16).toString('hex');
+  pendingGoogle.set(state, { createdAt: Date.now() });
+  const url = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: `${base}/api/auth/google/callback`,
+    response_type: 'code',
+    scope: 'openid email profile',
+    state,
+    prompt: 'select_account',
+  }).toString();
+  res.json({ ok: true, url, state });
+});
+
+app.get('/api/auth/google/callback', async (req, res) => {
+  await ready();
+  const page = (title, msg) => res.send(
+    `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>` +
+    `<body style="font-family:sans-serif;background:#0A0F1E;color:#F3F4F6;text-align:center;padding:15vh 20px;margin:0">` +
+    `<h2>${title}</h2><p style="color:#9CA3AF">${msg}</p></body></html>`,
+  );
+  const { code, state } = req.query;
+  const pend = pendingGoogle.get(String(state || ''));
+  if (!pend) return page('Enlace expirado', 'Vuelve a Kalory y pulsa de nuevo “Continuar con Google”.');
+  if (!code) {
+    pendingGoogle.delete(String(state));
+    return page('Acceso cancelado', 'Vuelve a Kalory e inténtalo de nuevo.');
+  }
+  try {
+    if (!GOOGLE_CLIENT_SECRET) throw new Error('sin_secreto');
+    const base = publicBase();
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code: String(code),
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri: `${base}/api/auth/google/callback`,
+        grant_type: 'authorization_code',
+      }).toString(),
+    });
+    if (!tokenRes.ok) throw new Error('canje_fallido');
+    const tok = await tokenRes.json();
+    if (!tok.id_token) throw new Error('canje_fallido');
+    const payload = JSON.parse(Buffer.from(tok.id_token.split('.')[1], 'base64').toString('utf8'));
+    if (!payload.sub || !payload.email || payload.aud !== GOOGLE_CLIENT_ID) throw new Error('perfil_invalido');
+    const u = await findOrCreateGoogleUser({ sub: payload.sub, email: payload.email, name: payload.name || payload.email });
+    pend.token = sign(u.id);
+    pend.user = pub(u);
+    persist();
+    return page('¡Listo! 🎉', 'Ya puedes volver a Kalory: tu sesión está iniciada.');
+  } catch (e) {
+    pendingGoogle.delete(String(state));
+    return page('No se pudo completar', 'Vuelve a Kalory e inténtalo de nuevo. (' + (e.message || 'error') + ')');
+  }
+});
+
+app.get('/api/auth/google/poll', async (req, res) => {
+  const key = String(req.query.state || '');
+  const pend = pendingGoogle.get(key);
+  if (!pend) return res.status(404).json({ ok: false, error: 'expirado' });
+  if (Date.now() - pend.createdAt > 5 * 60 * 1000) {
+    pendingGoogle.delete(key);
+    return res.status(404).json({ ok: false, error: 'expirado' });
+  }
+  if (pend.token) {
+    pendingGoogle.delete(key);
+    return res.json({ ok: true, token: pend.token, user: pend.user });
+  }
+  return res.json({ ok: true, pending: true });
 });
 
 // ---------- datos del usuario ----------
@@ -375,7 +473,7 @@ app.get('/api/export', auth, async (req, res) => {
 });
 
 // ---------- versión (aviso de actualización en la app) ----------
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 app.get('/api/version', (req, res) => {
   res.json({
     ok: true,

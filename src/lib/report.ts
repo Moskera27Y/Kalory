@@ -1,6 +1,6 @@
 import type { DayHistory } from '../types';
 
-export const APP_VERSION = '1.5.0';
+export const APP_VERSION = '1.6.0';
 
 export function downloadFile(name: string, content: string, mime = 'text/plain') {
   const blob = new Blob([content], { type: `${mime};charset=utf-8` });

@@ -308,4 +308,6 @@ export const AUTH_ERRORS: Record<string, string> = {
   solo_exe: 'El acceso con Google solo está disponible en el programa instalado (.exe).',
   server_error: 'No se pudo contactar al servidor. Revisa tu conexión.',
   google_invalido: 'Google no validó el acceso en el servidor.',
+  sin_public_url: 'Servidor sin URL pública configurada.',
+  expirado: 'El acceso expiró. Inténtalo de nuevo.',
 };

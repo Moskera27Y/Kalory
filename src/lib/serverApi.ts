@@ -136,6 +136,10 @@ export class ServerDb implements DbApi {
 
   async googleSignIn(): Promise<AuthResult> {
     try {
+      // En móvil no hay proceso de escritorio: se usa el navegador del
+      // sistema y se sondea hasta completar el acceso.
+      const { isNative } = await import('./steps');
+      if (isNative()) return this.googleSignInMobile();
       const bridge = window.kaloryDb;
       if (!bridge?.getGoogleIdToken) return { ok: false, error: 'solo_exe' };
       const t = await bridge.getGoogleIdToken();
@@ -144,6 +148,44 @@ export class ServerDb implements DbApi {
         this.url, '', '/api/auth/google', 'POST', { idToken: (t as { idToken: string }).idToken });
       saveSession(this.url, d.token);
       return { ok: true, user: d.user };
+    } catch (e) {
+      return { ok: false, error: (e as { code?: string }).code || 'server_error' };
+    }
+  }
+
+  private async googleSignInMobile(): Promise<AuthResult> {
+    try {
+      const s = await req<{ url: string; state: string }>(this.url, '', '/api/auth/google/start', 'POST', {});
+      try {
+        const { Browser } = await import('@capacitor/browser');
+        await Browser.open({ url: s.url });
+      } catch {
+        window.open(s.url, '_blank');
+      }
+      for (let i = 0; i < 90; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        try {
+          const p = await req<{ token?: string; user?: AuthUser; pending?: boolean }>(
+            this.url, '', `/api/auth/google/poll?state=${s.state}`);
+          if (p.token && p.user) {
+            try {
+              const { Browser } = await import('@capacitor/browser');
+              await Browser.close();
+            } catch { /* ignore */ }
+            saveSession(this.url, p.token);
+            return { ok: true, user: p.user };
+          }
+        } catch (e) {
+          if ((e as { code?: string }).code === 'expirado') {
+            return { ok: false, error: 'cancelled' };
+          }
+        }
+      }
+      try {
+        const { Browser } = await import('@capacitor/browser');
+        await Browser.close();
+      } catch { /* ignore */ }
+      return { ok: false, error: 'timeout' };
     } catch (e) {
       return { ok: false, error: (e as { code?: string }).code || 'server_error' };
     }
