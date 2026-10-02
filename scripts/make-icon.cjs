@@ -36,7 +36,7 @@ const RING_STOPS = [[0, '#10B981'], [0.38, '#34D399'], [0.62, '#F59E0B'], [0.85,
 const FLAME_STOPS = [[0, '#10B981'], [0.45, '#4ADE80'], [0.68, '#FBBF24'], [0.86, '#F97316'], [1, '#EF4444']];
 
 // ---------- pintado ----------
-function paint(N) {
+function paint(N, withBg = true) {
   const buf = Buffer.alloc(N * N * 4);
   const cx = N / 2, cy = N / 2;
   const R = N * 0.352, W = N * 0.098; // radio medio y grosor del anillo
@@ -45,6 +45,7 @@ function paint(N) {
     for (let x = 0; x < N; x++) {
       let r = 0, g = 0, b = 0, a = 0;
       // fondo: cuadrado redondeado con degradado vertical
+      if (withBg) {
       const qx = Math.max(Math.abs(x + 0.5 - cx) - (cx - RR), 0);
       const qy = Math.max(Math.abs(y + 0.5 - cy) - (cy - RR), 0);
       const qd = Math.hypot(qx, qy);
@@ -54,6 +55,7 @@ function paint(N) {
         const top = hex('#16213B'), bot = hex('#0A0F1E');
         [r, g, b] = mix(top, bot, t);
         a = bgA;
+      }
       }
       const px = x + 0.5, py = y + 0.5;
       // anillo
