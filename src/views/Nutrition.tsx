@@ -95,7 +95,8 @@ function FoodLens({ meal, onAdd }: { meal: string; onAdd: (f: { name: string; kc
   const shoot = async () => {
     setError('');
     try {
-      setPhoto(await takePhoto().then(async (d) => (await fromDataUrl(d), d)));
+      const d = await takePhoto();
+      await fromDataUrl(d);
     } catch {
       setError('No se pudo abrir la cámara. Revisa el permiso.');
     }

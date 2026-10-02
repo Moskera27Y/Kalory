@@ -301,7 +301,7 @@ export const AUTH_ERRORS: Record<string, string> = {
   credenciales: 'Correo o contraseña incorrectos.',
   no_client_id: 'Falta configurar el Client ID de Google (ver ayuda abajo).',
   cancelled: 'Cancelaste el acceso con Google.',
-  timeout: 'Se agotó el tiempo de espera. Inténtalo de nuevo.',
+  timeout: 'Se agotó el tiempo de espera (¿cerraste el navegador?). Vuelve y pulsa de nuevo Continuar con Google.',
   bad_state: 'Verificación de seguridad fallida. Inténtalo de nuevo.',
   token_exchange_failed: 'Google no completó el acceso. Revisa tu Client ID.',
   google_error: 'No se pudo completar el acceso con Google.',

@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { GlassCard } from '../components/ui';
 import { ActivityRings, AnimatedCounter, WaterTracker } from '../components/widgets';
 import FastingWidget from '../components/FastingWidget';
-import { STEPS_GOAL, saveWidgetSnapshot } from '../lib/steps';
+import { STEPS_GOAL, isNative, saveWidgetSnapshot } from '../lib/steps';
 import { saveSleep, listSleep, avgSleep } from '../lib/sleep';
 import { coachMessage, type CoachIcon } from '../lib/coach';
 import { fastingState, PROTOCOLS } from '../lib/fasting';
@@ -124,7 +124,7 @@ export default function Dashboard() {
         </div>
 
         {/* Tiles 2x2 */}
-        <motion.div variants={staggerChild} className={`grid grid-cols-2 gap-3 ${stepsSupported ? 'lg:grid-cols-5' : 'lg:grid-cols-4'}`}>
+        <motion.div variants={staggerChild} className={`grid grid-cols-2 gap-3 ${(stepsSupported || isNative()) ? 'lg:grid-cols-5' : 'lg:grid-cols-4'}`}>
           {tiles.map((t) => (
             <GlassCard key={t.label} className="glow-hover !p-4 text-center">
               <t.icon size={17} className="mx-auto text-muted" />
@@ -133,7 +133,7 @@ export default function Dashboard() {
               <p className="text-[11px] text-muted/70">{t.sub}</p>
             </GlassCard>
           ))}
-          {stepsSupported && (
+          {(stepsSupported || isNative()) && (
             <motion.button variants={staggerChild} onClick={() => refreshSteps()} title="Toca para actualizar" className="text-left">
               <GlassCard className="glow-hover !p-4 text-center h-full border-emerald/20">
                 <Footprints size={17} className="mx-auto text-emerald" />
@@ -142,7 +142,9 @@ export default function Dashboard() {
                 </p>
                 <p className="text-[11px] uppercase tracking-wider text-muted">Pasos</p>
                 <p className="text-[11px] text-muted/70">
-                  {steps !== null ? `meta ${STEPS_GOAL.toLocaleString('es')}` : stepsError ?? 'toca para activar'}
+                  {steps !== null ? `meta ${STEPS_GOAL.toLocaleString('es')}`
+                    : !stepsSupported ? 'actualiza al IPA/APK nuevo y toca'
+                    : stepsError ?? 'toca para activar'}
                 </p>
               </GlassCard>
             </motion.button>

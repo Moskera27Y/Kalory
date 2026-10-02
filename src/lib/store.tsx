@@ -260,10 +260,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const code = (e as Error)?.message || 'error';
       setStepsError(
         code === 'permiso_denegado'
-          ? 'Permiso denegado: actívalo en Ajustes del teléfono y toca de nuevo.'
-          : code === 'sin_sensor'
-            ? 'Este teléfono no tiene sensor de pasos.'
-            : 'Toca para intentar de nuevo.',
+          ? 'Permiso denegado: actívalo en Ajustes → Salud y toca de nuevo.'
+          : code === 'sin_sensor' || code === 'sin_healthkit'
+            ? 'Salud no disponible: abre la app Salud del iPhone una vez y vuelve.'
+            : code === 'no_plugin'
+              ? 'Instala el IPA/APK nuevo: esta versión no trae el plugin de pasos.'
+              : 'Toca para intentar de nuevo.',
       );
     }
   };

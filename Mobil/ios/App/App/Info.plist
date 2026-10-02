@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -51,5 +51,7 @@
 	<string>Kalory registra tus entrenamientos para llevar tu historial de actividad.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Kalory usa la cámara para escanear códigos de barras de alimentos.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Kalory accede a tu galería para que elijas la foto del plato en el Lector de calorías.</string>
 </dict>
 </plist>

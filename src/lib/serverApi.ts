@@ -245,13 +245,13 @@ export class ServerDb implements DbApi {
 
   async deleteFood(id: number) {
     const uid = this.uid;
-    // la fecha se resuelve en la sombra si existe
     try {
       await fetch(this.url + '/api/foods/' + id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + this.token } });
     } catch (e) {
       if (uid && isOfflineError(e)) {
         enqueue(uid, { kind: 'deleteFood', payload: { id } });
-        // quítalo de todas las sombras del día conocido
+        // Reflejo inmediato en la sombra de hoy para que no "reviva" sin conexión
+        applyDeleteFood(uid, todayStr(), id);
         return true;
       }
       throw e;
