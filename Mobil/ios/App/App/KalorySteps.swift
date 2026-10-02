@@ -85,16 +85,22 @@ public class KalorySteps: CAPPlugin, CAPBridgedPlugin {
             let start = Date().addingTimeInterval(-24 * 3600)
             let predicate = HKQuery.predicateForSamples(withStart: start, end: Date(), options: .strictStartDate)
             let q = HKSampleQuery(sampleType: sl, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, _ in
+                // Fases detalladas (iOS 16+) o "dormido" genérico (iOS 14-15)
+                let asleepValues: [Int]
+                if #available(iOS 16.0, *) {
+                    asleepValues = [
+                        HKCategoryValueSleepAnalysis.asleepCore.rawValue,
+                        HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
+                        HKCategoryValueSleepAnalysis.asleepREM.rawValue,
+                        HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
+                    ]
+                } else {
+                    asleepValues = [HKCategoryValueSleepAnalysis.asleep.rawValue]
+                }
                 var secs = 0.0
                 for case let s as HKCategorySample in samples ?? [] {
-                    switch s.value {
-                    case HKCategoryValueSleepAnalysis.asleepCore.rawValue,
-                         HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
-                         HKCategoryValueSleepAnalysis.asleepREM.rawValue,
-                         HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue:
+                    if asleepValues.contains(s.value) {
                         secs += s.endDate.timeIntervalSince(s.startDate)
-                    default:
-                        break
                     }
                 }
                 call.resolve(["hours": secs / 3600.0])
