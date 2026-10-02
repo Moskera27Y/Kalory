@@ -114,11 +114,13 @@ public class KalorySteps: CAPPlugin, CAPBridgedPlugin {
                 call.reject("permiso_denegado")
                 return
             }
-            let startMs = call.getDouble("startMs") ?? Date().addingTimeInterval(-2700).timeIntervalSince1970 * 1000
-            let endMs = call.getDouble("endMs") ?? Date().timeIntervalSince1970 * 1000
-            let kcal = call.getDouble("kcal") ?? 0
-            let start = Date(timeIntervalSince1970: startMs / 1000)
-            let end = Date(timeIntervalSince1970: endMs / 1000)
+            let opts = call.options as? [String: Any] ?? [:]
+            let num = { (k: String) -> Double in (opts[k] as? NSNumber)?.doubleValue ?? 0 }
+            let startMs = num("startMs")
+            let endMs = num("endMs")
+            let kcal = num("kcal")
+            let start = Date(timeIntervalSince1970: (startMs > 0 ? startMs : Date().addingTimeInterval(-2700).timeIntervalSince1970 * 1000) / 1000)
+            let end = Date(timeIntervalSince1970: (endMs > 0 ? endMs : Date().timeIntervalSince1970 * 1000) / 1000)
             let energy = HKQuantity(unit: HKUnit.kilocalorie(), doubleValue: kcal)
             let workout = HKWorkout(activityType: .traditionalStrengthTraining, start: start, end: end, duration: end.timeIntervalSince(start), totalEnergyBurned: energy, totalDistance: nil, metadata: [HKMetadataKeyWasUserEntered: true])
             self.store.save(workout) { ok, _ in
