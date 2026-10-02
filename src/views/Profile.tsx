@@ -3,12 +3,12 @@ import { Link } from 'react-router-dom';
 import {
   UserCheck, ClipboardList, UtensilsCrossed, Droplet, Dumbbell,
   Trophy, Target, Flame, Pencil, Lock, CalendarCheck, Scale, Camera, Medal, Bell,
-  FileDown, FileUp, Database, FileText, MoonStar, Hourglass, LogOut,
+  FileDown, FileUp, Database, FileText, MoonStar, Hourglass, LogOut, Footprints,
 } from 'lucide-react';
 import { GlassCard } from '../components/ui';
 import { MEDALS } from '../lib/achievements';
 import { calcBMR } from '../lib/calculations';
-import { loadPrefs, savePrefs, type ReminderPrefs } from '../lib/reminders';
+import { loadPrefs, savePrefs, type NotifyPrefs } from '../lib/reminders';
 import { downloadFile, weeklyCSV } from '../lib/report';
 import { daysAgo, getDb, todayStr } from '../lib/db';
 import { useStore } from '../lib/store';
@@ -28,6 +28,7 @@ const MEDAL_ICONS: Record<string, typeof Trophy> = {
   foto_1: Camera,
   ayuno_1: MoonStar,
   ayuno_7: Hourglass,
+  pasos_10k: Footprints,
 };
 
 const ACT_LABEL: Record<string, string> = {
@@ -49,7 +50,7 @@ function bmiCategory(bmi: number): string {
 
 export default function Profile() {
   const { profile, targets, achievements, achievementDates, history, logout } = useStore();
-  const [prefs, setPrefs] = useState<ReminderPrefs>(() => loadPrefs());
+  const [prefs, setPrefs] = useState<NotifyPrefs>(() => loadPrefs());
   const [dbMsg, setDbMsg] = useState('');
   if (!profile || !targets) return null;
 
@@ -134,31 +135,66 @@ export default function Profile() {
           <GlassCard>
             <div className="flex items-center gap-2">
               <Bell size={17} className="text-emerald" />
-              <p className="text-sm font-bold">Recordatorios de Windows</p>
+              <p className="text-sm font-bold">Recordatorios y horarios</p>
             </div>
             <div className="mt-3 flex flex-col gap-2">
               {([
-                ['water', 'Agua durante el día'],
-                ['meals', 'Comidas (almuerzo y cena)'],
-                ['workout', 'Entrenamiento pendiente'],
-              ] as const).map(([k, label]) => (
-                <button
-                  key={k}
-                  onClick={() => {
-                    const next = { ...prefs, [k]: !prefs[k] };
-                    setPrefs(next);
-                    savePrefs(next);
-                  }}
-                  className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2.5 text-sm"
-                >
-                  <span className={`relative h-5 w-9 shrink-0 rounded-full transition-all ${prefs[k] ? 'bg-emerald' : 'bg-white/10'}`}>
-                    <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${prefs[k] ? 'left-[18px]' : 'left-0.5'}`} />
-                  </span>
-                  {label}
-                </button>
+                ['water', 'Agua durante el día', null],
+                ['meals', 'Comidas del día', null],
+                ['workout', 'Entrenamiento pendiente', 'workoutTime'],
+                ['goals', 'Cierre y metas diarias', 'goalsTime'],
+              ] as const).map(([k, label, timeKey]) => (
+                <div key={k} className="flex items-center gap-2 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2">
+                  <button
+                    onClick={() => {
+                      const next = { ...prefs, [k]: !prefs[k] };
+                      setPrefs(next);
+                      savePrefs(next);
+                    }}
+                    className="flex flex-1 items-center gap-3 text-sm"
+                  >
+                    <span className={`relative h-5 w-9 shrink-0 rounded-full transition-all ${prefs[k] ? 'bg-emerald' : 'bg-white/10'}`}>
+                      <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${prefs[k] ? 'left-[18px]' : 'left-0.5'}`} />
+                    </span>
+                    {label}
+                  </button>
+                  {timeKey && (
+                    <input
+                      type="time" value={prefs[timeKey]}
+                      onChange={(e) => {
+                        const next = { ...prefs, [timeKey]: e.target.value };
+                        setPrefs(next);
+                        savePrefs(next);
+                      }}
+                      className="w-[104px] rounded-lg bg-white/5 border border-white/10 px-2 py-1.5 text-xs"
+                    />
+                  )}
+                </div>
               ))}
+              {prefs.meals && (
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    ['breakfast', 'Desayuno'],
+                    ['lunch', 'Almuerzo'],
+                    ['dinner', 'Cena'],
+                  ] as const).map(([k, label]) => (
+                    <label key={k} className="grid gap-1 rounded-xl border border-white/5 bg-white/[0.03] px-2.5 py-2 text-[11px] text-muted">
+                      {label}
+                      <input
+                        type="time" value={prefs[k]}
+                        onChange={(e) => {
+                          const next = { ...prefs, [k]: e.target.value };
+                          setPrefs(next);
+                          savePrefs(next);
+                        }}
+                        className="w-full rounded-lg bg-white/5 border border-white/10 px-2 py-1.5 text-xs text-white"
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
-            <p className="mt-2 text-[11px] text-muted">Cerrar la ventana minimiza a la bandeja; salir desde el icono.</p>
+            <p className="mt-2 text-[11px] text-muted">En el móvil suenan aunque la app esté cerrada. Cerrar la ventana minimiza a la bandeja.</p>
           </GlassCard>
 
           <GlassCard>

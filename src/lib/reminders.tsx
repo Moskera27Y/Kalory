@@ -1,24 +1,28 @@
 import { useEffect } from 'react';
 import { useStore } from './store';
+import { DEFAULT_NOTIFY, scheduleDaily, type NotifyPrefs } from './notify';
+export type { NotifyPrefs };
+import { isNative } from './steps';
 
 const LS_KEY = 'kalory-reminders-v1';
 
-export interface ReminderPrefs {
-  water: boolean;
-  meals: boolean;
-  workout: boolean;
-}
-
-export function loadPrefs(): ReminderPrefs {
+export function loadPrefs(): NotifyPrefs {
   try {
     const raw = localStorage.getItem(LS_KEY);
-    if (raw) return { water: true, meals: true, workout: true, ...JSON.parse(raw) };
+    if (raw) return { ...DEFAULT_NOTIFY, ...JSON.parse(raw) };
   } catch { /* ignore */ }
-  return { water: true, meals: true, workout: true };
+  return { ...DEFAULT_NOTIFY };
 }
 
-export function savePrefs(p: ReminderPrefs) {
+export function savePrefs(p: NotifyPrefs) {
   localStorage.setItem(LS_KEY, JSON.stringify(p));
+  // En móvil se programan aunque la app esté cerrada
+  if (isNative()) scheduleDaily(p).catch(() => undefined);
+}
+
+function toH(hm: string): number {
+  const [h, m] = hm.split(':').map(Number);
+  return (h || 0) + (m || 0) / 60;
 }
 
 function lastKey(id: string) {
@@ -53,9 +57,14 @@ function notify(title: string, body: string) {
   } catch { /* ignore */ }
 }
 
-/** Revisa recordatorios cada 30 min (y una vez al arrancar con retardo). No renderiza nada. */
+/** Revisa recordatorios cada 30 min con los horarios del usuario. No renderiza nada. */
 export function Reminders() {
   const { user, profile, targets, day, consumed } = useStore();
+
+  // Al entrar en móvil, asegura la programación diaria
+  useEffect(() => {
+    if (user && isNative()) scheduleDaily(loadPrefs()).catch(() => undefined);
+  }, [user]);
 
   useEffect(() => {
     if (!user || !profile) return;
@@ -68,17 +77,25 @@ export function Reminders() {
         notify('💧 Hora de hidratarte', `Llevas ${(day.waterMl / 1000).toFixed(2)} L de ${(targets.waterMl / 1000).toFixed(1)} L.`);
         markShown('water');
       }
-      if (prefs.meals && consumed === 0 && h >= 13 && h < 15 && !shownToday('lunch')) {
-        notify('🍽️ ¿Ya almorzaste?', 'Registra tu comida para no perder la cuenta del día.');
+      if (prefs.meals && consumed === 0 && h >= toH(prefs.breakfast) && h < toH(prefs.breakfast) + 2 && !shownToday('breakfast')) {
+        notify('🍳 Hora del desayuno', 'Registra tu desayuno para empezar el día contando.');
+        markShown('breakfast');
+      }
+      if (prefs.meals && consumed === 0 && h >= toH(prefs.lunch) && h < toH(prefs.lunch) + 2 && !shownToday('lunch')) {
+        notify('🍽️ Hora del almuerzo', '¿Ya almorzaste? Anótalo en tu diario.');
         markShown('lunch');
       }
-      if (prefs.meals && h >= 20.5 && !shownToday('dinner')) {
-        notify('🌙 Registra tu cena', day.foods.length === 0 ? 'Aún no registraste comidas hoy.' : 'No olvides anotar tu última comida.');
+      if (prefs.meals && h >= toH(prefs.dinner) && h < toH(prefs.dinner) + 2 && !shownToday('dinner')) {
+        notify('🌙 Hora de la cena', day.foods.length === 0 ? 'Aún no registraste comidas hoy.' : 'No olvides anotar tu cena.');
         markShown('dinner');
       }
-      if (prefs.workout && day.done.length === 0 && h >= 18 && !shownToday('workout')) {
-        notify('🔥 Te falta el entreno', `Tienes ${profile.daysPerWeek} días esta semana. ¡Hoy puede ser uno!`);
+      if (prefs.workout && day.done.length === 0 && h >= toH(prefs.workoutTime) && !shownToday('workout')) {
+        notify('🔥 A entrenar', `Tienes ${profile.daysPerWeek} días esta semana. ¡Hoy puede ser uno!`);
         markShown('workout');
+      }
+      if (prefs.goals && h >= toH(prefs.goalsTime) && !shownToday('goals')) {
+        notify('🎯 Cierre del día', 'Revisa si cumpliste tu meta de calorías, agua y entreno.');
+        markShown('goals');
       }
     };
 

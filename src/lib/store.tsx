@@ -3,6 +3,7 @@ import type { AuthResult, AuthUser, DayData, DayHistory, MacroTargets, UserProfi
 import { calcMacros } from './calculations';
 import { getDb, todayStr, daysAgo, type DbApi } from './db';
 import { ServerDb, clearServerSession, loadServerUrl, setServerUrlOnly, clearServerOverride } from './serverApi';
+import { getStepsToday, isNative } from './steps';
 
 interface Store {
   loading: boolean;
@@ -39,6 +40,8 @@ interface Store {
   weights: WeightEntry[];
   streak: number;
   weekWorkouts: number;
+  steps: number | null;
+  refreshSteps: () => Promise<void>;
   refreshHistory: () => Promise<void>;
   setWeight: (weight: number, date?: string) => Promise<void>;
 }
@@ -70,6 +73,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [weights, setWeights] = useState<WeightEntry[]>([]);
   const [streak, setStreak] = useState(0);
   const [weekWorkouts, setWeekWorkouts] = useState(0);
+  const [steps, setSteps] = useState<number | null>(null);
 
   const clearLocal = () => {
     setProfile(null);
@@ -82,6 +86,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setWeights([]);
     setStreak(0);
     setWeekWorkouts(0);
+    setSteps(null);
   };
 
   const isActiveDay = (d: DayHistory) => d.kcal > 0 || d.waterMl > 0 || d.exercises > 0;
@@ -154,6 +159,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, profile, day.date]);
 
+  useEffect(() => {
+    if (user) refreshSteps().catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
   const afterAuth = async (r: AuthResult): Promise<AuthResult> => {
     if (r.ok) {
       setCelebration(r.user.name);
@@ -163,6 +173,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   const dismissCelebration = () => setCelebration(null);
+
+  const refreshSteps = async () => {
+    if (!user || !isNative()) {
+      if (!isNative()) setSteps(null);
+      return;
+    }
+    try {
+      const s = await getStepsToday(user.id);
+      setSteps(s);
+      if (s >= 10000) await unlock('pasos_10k', achievements);
+    } catch {
+      setSteps(null);
+    }
+  };
 
   const unlockMedal = async (id: string) => {
     await unlock(id, achievements);
@@ -274,7 +298,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         serverUrl, setServerUrl, useOfficialServer,
         register, login, googleSignIn, logout,
         completeOnboarding, refresh, logFood, deleteFood, logWater, toggleExercise, resetAll, unlockMedal,
-        history, weights, streak, weekWorkouts, refreshHistory, setWeight,
+        history, weights, streak, weekWorkouts, refreshHistory, setWeight, steps, refreshSteps,
       }}
     >
       {children}

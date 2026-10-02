@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Flame, Dumbbell, ChevronRight, Beef, Wheat, Droplet, Plus, TrendingUp, Trophy } from 'lucide-react';
+import { Flame, Dumbbell, ChevronRight, Beef, Wheat, Droplet, Plus, TrendingUp, Trophy, Footprints } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { GlassCard } from '../components/ui';
 import { ActivityRings, AnimatedCounter, WaterTracker } from '../components/widgets';
 import FastingWidget from '../components/FastingWidget';
+import { STEPS_GOAL } from '../lib/steps';
 import { useStore } from '../lib/store';
 import { staggerParent, staggerChild } from '../lib/motion';
 
@@ -13,7 +14,7 @@ function Skeleton({ className = '' }: { className?: string }) {
 }
 
 export default function Dashboard() {
-  const { profile, targets, consumed, proteinEaten, carbsEaten, fatEaten, day, logFood, logWater, activeDays, history, streak, loading } = useStore();
+  const { profile, targets, consumed, proteinEaten, carbsEaten, fatEaten, day, logFood, logWater, activeDays, history, streak, loading, steps, refreshSteps } = useStore();
   const target = targets?.calories ?? 0;
   const burned = day.done.length * 90;
   const remaining = Math.max(0, target - consumed);
@@ -99,7 +100,7 @@ export default function Dashboard() {
         </div>
 
         {/* Tiles 2x2 */}
-        <motion.div variants={staggerChild} className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <motion.div variants={staggerChild} className={`grid grid-cols-2 gap-3 ${steps !== null ? 'lg:grid-cols-5' : 'lg:grid-cols-4'}`}>
           {tiles.map((t) => (
             <GlassCard key={t.label} className="glow-hover !p-4 text-center">
               <t.icon size={17} className="mx-auto text-muted" />
@@ -108,6 +109,16 @@ export default function Dashboard() {
               <p className="text-[11px] text-muted/70">{t.sub}</p>
             </GlassCard>
           ))}
+          {steps !== null && (
+            <motion.button variants={staggerChild} onClick={() => refreshSteps()} title="Toca para actualizar" className="text-left">
+              <GlassCard className="glow-hover !p-4 text-center h-full border-emerald/20">
+                <Footprints size={17} className="mx-auto text-emerald" />
+                <p className="mt-1 font-display text-2xl font-extrabold tabular-nums">{steps.toLocaleString('es')}</p>
+                <p className="text-[11px] uppercase tracking-wider text-muted">Pasos</p>
+                <p className="text-[11px] text-muted/70">meta {STEPS_GOAL.toLocaleString('es')}</p>
+              </GlassCard>
+            </motion.button>
+          )}
         </motion.div>
 
         {/* Reto semanal */}
