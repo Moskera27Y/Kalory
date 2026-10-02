@@ -21,7 +21,16 @@ export const DEFAULT_SERVER_URL = 'https://kalory-production.up.railway.app';
 export function loadServerUrl(): string {
   try {
     const stored = JSON.parse(localStorage.getItem(LS_KEY) || 'null')?.url;
-    if (typeof stored === 'string') return stored; // '' = forzado a local
+    if (typeof stored === 'string') {
+      const s = stored.trim();
+      if (s === '') return s; // '' = forzado a local
+      // Auto-migración: URLs viejas de desarrollo (localhost) → servidor oficial
+      if (/localhost|127\.0\.0\.1/i.test(s)) {
+        localStorage.removeItem(LS_KEY);
+        return DEFAULT_SERVER_URL;
+      }
+      return s;
+    }
     return DEFAULT_SERVER_URL;
   } catch { return DEFAULT_SERVER_URL; }
 }
