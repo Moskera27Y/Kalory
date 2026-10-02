@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { HashRouter, Routes, Route, Navigate, useLocation, NavLink } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { LayoutDashboard, Dumbbell, Salad, User } from 'lucide-react';
+import { LayoutDashboard, Dumbbell, Salad, User, TrendingUp, Users, BookOpen } from 'lucide-react';
 import SplashScreen from './components/SplashScreen';
 import LoginCelebration from './components/LoginCelebration';
 import AmbientCanvas from './components/AmbientCanvas';
@@ -130,17 +130,20 @@ function AnimatedRoutes() {
         </AnimatePresence>
       </main>
 
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#0A0F1E]/90 backdrop-blur-xl px-2 pt-2 [padding-bottom:calc(env(safe-area-inset-bottom)+10px)]">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#0A0F1E]/90 backdrop-blur-xl px-1 pt-2 [padding-bottom:calc(env(safe-area-inset-bottom)+10px)]">
         <div className="flex justify-around">
         {[
           { to: '/', icon: LayoutDashboard, label: 'Inicio' },
           { to: '/rutinas', icon: Dumbbell, label: 'Rutinas' },
           { to: '/dieta', icon: Salad, label: 'Dieta' },
+          { to: '/progreso', icon: TrendingUp, label: 'Progreso' },
+          { to: '/comunidad', icon: Users, label: 'Comunidad' },
+          { to: '/biblioteca', icon: BookOpen, label: 'Biblio' },
           { to: '/perfil', icon: User, label: 'Perfil' },
         ].map(({ to, icon: Icon, label }) => (
           <NavLink key={to} to={to} end={to === '/'}
-            className={({ isActive }) => `flex flex-col items-center gap-0.5 rounded-xl px-5 py-1.5 text-[11px] font-semibold ${isActive ? 'text-emerald bg-emerald/10' : 'text-muted'}`}>
-            <Icon size={20} />{label}
+            className={({ isActive }) => `flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 text-[10px] font-semibold ${isActive ? 'text-emerald bg-emerald/10' : 'text-muted'}`}>
+            <Icon size={19} />{label}
           </NavLink>
         ))}
         </div>
