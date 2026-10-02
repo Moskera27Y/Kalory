@@ -14,37 +14,18 @@ export function isNative(): boolean {
   }
 }
 
-type HealthApi = {
-  isAvailable?: (ok: (v: boolean) => void, err: (e: unknown) => void) => void;
-  requestAuthorization?: (
-    scopes: { read: string[]; write: string[] },
-    ok: () => void,
-    err: (e: unknown) => void,
-  ) => void;
-  query?: (
-    opts: { startDate: Date; endDate: Date; dataType: string; limit?: number; filtered?: boolean },
-    ok: (samples: { value: number }[]) => void,
-    err: (e: unknown) => void,
-  ) => void;
+type StepsPlugin = {
+  getToday?: () => Promise<{ steps?: number }>;
 };
 
-function api(): HealthApi | null {
+function plugin(): StepsPlugin | null {
   try {
-    const h = (window.navigator as unknown as { health?: HealthApi }).health;
-    return h ?? null;
+    const cap = (window as unknown as { Capacitor?: { Plugins?: Record<string, StepsPlugin> } }).Capacitor;
+    return cap?.Plugins?.KalorySteps ?? null;
   } catch {
     return null;
   }
 }
-
-const call = <T,>(fn: (ok: (v: T) => void, err: (e: unknown) => void) => void): Promise<T> =>
-  new Promise((resolve, reject) => {
-    try {
-      fn(resolve, reject);
-    } catch (e) {
-      reject(e);
-    }
-  });
 
 const LS_KEY = 'kalory-steps-v1';
 interface Cache { [userId: number]: { date: string; steps: number; at: number } }
@@ -68,15 +49,12 @@ function todayStr(): string {
 
 /** Lee los pasos de hoy del teléfono (pide permiso la primera vez). */
 export async function readPhoneSteps(): Promise<number> {
-  const h = api();
-  if (!h?.requestAuthorization || !h?.query) throw new Error('no_plugin');
-  await call<void>((ok, err) => h.requestAuthorization!({ read: ['steps'], write: [] }, ok, err));
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const samples = await call<{ value: number }[]>((ok, err) =>
-    h.query!({ startDate: start, endDate: new Date(), dataType: 'steps', limit: 1000 }, ok, err),
-  );
-  return Math.round(samples.reduce((a, s) => a + (Number(s.value) || 0), 0));
+  const p = plugin();
+  if (!p?.getToday) throw new Error('no_plugin');
+  const r = await p.getToday();
+  const v = Math.round(Number(r?.steps) || 0);
+  if (!Number.isFinite(v)) throw new Error('bad_value');
+  return Math.max(0, v);
 }
 
 /** Pasos de hoy (caché de 15 min por usuario para no pedir al sensor a cada rato). */
