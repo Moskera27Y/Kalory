@@ -18,6 +18,15 @@ type StepsPlugin = {
   getToday?: () => Promise<{ steps?: number }>;
 };
 
+export function stepsPluginAvailable(): boolean {
+  try {
+    const cap = (window as unknown as { Capacitor?: { Plugins?: Record<string, StepsPlugin> } }).Capacitor;
+    return !!cap?.Plugins?.KalorySteps?.getToday;
+  } catch {
+    return false;
+  }
+}
+
 function plugin(): StepsPlugin | null {
   try {
     const cap = (window as unknown as { Capacitor?: { Plugins?: Record<string, StepsPlugin> } }).Capacitor;

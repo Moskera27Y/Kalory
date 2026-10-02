@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Search, Plus, Trash2, ScanBarcode, Loader2 } from 'lucide-react';
+import { Search, Plus, Trash2, ScanBarcode, Loader2, History, Star } from 'lucide-react';
 import { GlassCard } from '../components/ui';
 import { useStore } from '../lib/store';
+import { getDb } from '../lib/db';
 
 const CATALOG = [
   { name: 'Pechuga de pollo 150g', kcal: 248, p: 46, c: 0, f: 5 },
@@ -27,6 +28,47 @@ export default function Nutrition() {
   const [looking, setLooking] = useState(false);
   const [found, setFound] = useState<null | { name: string; kcal100: number; p100: number; c100: number; f100: number }>(null);
   const [codeError, setCodeError] = useState('');
+  const [favs, setFavs] = useState<{ name: string; kcal: number; protein: number; carbs: number; fat: number; n: number }[]>([]);
+  const [repeatMsg, setRepeatMsg] = useState('');
+
+  useEffect(() => {
+    // Tus frecuentes: lo que más registraste (últimos datos disponibles)
+    getDb().exportData().then((d) => {
+      const foods = (d as { foods?: { name: string; kcal: number; protein: number; carbs: number; fat: number }[] }).foods ?? [];
+      const map = new Map<string, { n: number; kcal: number; protein: number; carbs: number; fat: number }>();
+      for (const f of foods) {
+        const e = map.get(f.name) || { n: 0, kcal: 0, protein: 0, carbs: 0, fat: 0 };
+        e.n++; e.kcal += f.kcal; e.protein += f.protein; e.carbs += f.carbs; e.fat += f.fat;
+        map.set(f.name, e);
+      }
+      setFavs([...map.entries()]
+        .sort((a, b) => b[1].n - a[1].n)
+        .slice(0, 5)
+        .map(([name, e]) => ({
+          name, n: e.n,
+          kcal: Math.round(e.kcal / e.n),
+          protein: Math.round((e.protein / e.n) * 10) / 10,
+          carbs: Math.round((e.carbs / e.n) * 10) / 10,
+          fat: Math.round((e.fat / e.n) * 10) / 10,
+        })));
+    }).catch(() => undefined);
+  }, []);
+
+  /** Copia las comidas de ayer al día de hoy de un toque. */
+  const repeatYesterday = async () => {
+    const y = new Date();
+    y.setDate(y.getDate() - 1);
+    const key = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`;
+    const d = await getDb().getDay(key);
+    if (d.foods.length === 0) {
+      setRepeatMsg('Ayer no registraste comidas.');
+      return;
+    }
+    for (const f of d.foods) {
+      await logFood({ name: f.name, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, meal: f.meal });
+    }
+    setRepeatMsg(`Copiadas ${d.foods.length} comidas de ayer.`);
+  };
 
   const results = CATALOG.filter((f) => f.name.toLowerCase().includes(q.toLowerCase()));
 
@@ -101,7 +143,28 @@ export default function Nutrition() {
           <button key={m} onClick={() => setMeal(m)}
             className={`chip !text-xs ${meal === m ? 'border-emerald/60 bg-emerald/15 text-white' : 'text-muted'}`}>{m}</button>
         ))}
+        <button onClick={repeatYesterday} className="chip !text-xs !border-fire/40 text-fire flex items-center gap-1.5">
+          <History size={13} /> Repetir ayer
+        </button>
       </div>
+      {repeatMsg && <p className="text-xs text-emerald">{repeatMsg}</p>}
+
+      {favs.length > 0 && (
+        <GlassCard className="!p-4">
+          <div className="flex items-center gap-2">
+            <Star size={15} className="text-fire" />
+            <p className="text-xs uppercase tracking-widest text-muted">Tus frecuentes · un toque y listo</p>
+          </div>
+          <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+            {favs.map((f) => (
+              <button key={f.name} onClick={() => logFood({ name: f.name, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, meal })}
+                className="chip !text-xs whitespace-nowrap hover:border-emerald/50 shrink-0">
+                + {f.name.length > 26 ? f.name.slice(0, 26) + '…' : f.name} <span className="text-muted">· {f.kcal}</span>
+              </button>
+            ))}
+          </div>
+        </GlassCard>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <GlassCard glow>

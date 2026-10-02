@@ -52,6 +52,7 @@ export default function Profile() {
   const { profile, targets, achievements, achievementDates, history, logout } = useStore();
   const [prefs, setPrefs] = useState<NotifyPrefs>(() => loadPrefs());
   const [dbMsg, setDbMsg] = useState('');
+  const [showImc, setShowImc] = useState(false);
   if (!profile || !targets) return null;
 
   const bmi = profile.weightKg / Math.pow(profile.heightCm / 100, 2);
@@ -109,11 +110,11 @@ export default function Profile() {
           <GlassCard>
             <p className="text-xs uppercase tracking-widest text-muted">Tus números</p>
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <div className="rounded-xl bg-white/[0.04] border border-white/5 p-4 text-center">
-                <p className="text-[11px] text-muted">IMC</p>
+              <button onClick={() => setShowImc(true)} title="Ver detalle" className="rounded-xl bg-white/[0.04] border border-white/5 p-4 text-center hover:border-emerald/40 transition-all">
+                <p className="text-[11px] text-muted">IMC ⓘ</p>
                 <p className="font-display text-2xl font-extrabold">{bmi.toFixed(1)}</p>
                 <p className="text-[11px] text-emerald">{bmiCategory(bmi)}</p>
-              </div>
+              </button>
               <div className="rounded-xl bg-white/[0.04] border border-white/5 p-4 text-center">
                 <p className="text-[11px] text-muted">Metabolismo basal</p>
                 <p className="font-display text-2xl font-extrabold">{bmr}</p>
@@ -287,6 +288,47 @@ export default function Profile() {
             </div>
           </GlassCard>
         </div>
+      </div>
+
+      {showImc && <ImcModal bmi={bmi} onClose={() => setShowImc(false)} />}
+    </div>
+  );
+}
+
+const IMC_ROWS: { max: number; name: string; color: string; risks: string; tip: string }[] = [
+  { max: 18.5, name: 'Bajo peso', color: 'text-sky-400', risks: 'Defensas bajas, fatiga, pérdida muscular y menor densidad ósea.', tip: 'Sube calorías con proteína y fuerza 3x/semana.' },
+  { max: 25, name: 'Rango saludable', color: 'text-emerald', risks: 'Riesgo bajo. Mantener hábitos te conserva aquí.', tip: 'Sigue con tu plan actual y revisa tu peso cada mes.' },
+  { max: 30, name: 'Sobrepeso', color: 'text-fire', risks: 'Tiende a subir la tensión y el azúcar; más carga en rodillas.', tip: 'Déficit suave de 300-500 kcal + caminar a diario.' },
+  { max: 35, name: 'Obesidad tipo I', color: 'text-fire-hot', risks: 'Riesgo alto de diabetes tipo 2, hipertensión y apnea del sueño.', tip: 'Plan estructurado de dieta + ejercicio; valora acompañamiento profesional.' },
+  { max: 40, name: 'Obesidad tipo II', color: 'text-fire-hot', risks: 'Riesgo muy alto cardiovascular y articular; posible síndrome metabólico.', tip: 'Acompañamiento médico y nutricional recomendado.' },
+  { max: 999, name: 'Obesidad tipo III', color: 'text-fire-hot', risks: 'Riesgo severo: corazón, articulaciones, respiración y metabolismo.', tip: 'Consulta médica prioritaria antes de entrenar fuerte.' },
+];
+
+function ImcModal({ bmi, onClose }: { bmi: number; onClose: () => void }) {
+  const active = IMC_ROWS.findIndex((r) => bmi < r.max);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="glass-strong w-full max-w-md p-6 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-widest text-muted">Tu IMC</p>
+            <p className="font-display text-3xl font-extrabold">{bmi.toFixed(1)}</p>
+          </div>
+          <span className={`ml-auto rounded-full px-3 py-1 text-xs font-bold border border-white/10 bg-white/5 ${IMC_ROWS[active].color}`}>
+            {IMC_ROWS[active].name}
+          </span>
+          <button onClick={onClose} className="chip !px-3 !py-1.5 text-muted">✕</button>
+        </div>
+        <div className="mt-4 flex flex-col gap-2">
+          {IMC_ROWS.map((r, i) => (
+            <div key={r.name} className={`rounded-xl border p-3 text-xs ${i === active ? 'border-emerald/50 bg-emerald/10' : 'border-white/5 bg-white/[0.02]'}`}>
+              <p className={`font-bold ${r.color}`}>{r.name}{i === active ? ' · tú estás aquí' : ''}</p>
+              <p className="mt-1 text-muted"><b className="text-white/80">Riesgos:</b> {r.risks}</p>
+              <p className="mt-1 text-muted"><b className="text-white/80">Consejo:</b> {r.tip}</p>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 text-[11px] text-muted">El IMC es orientativo y no distingue músculo de grasa. No es un diagnóstico médico.</p>
       </div>
     </div>
   );

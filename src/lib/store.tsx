@@ -3,7 +3,7 @@ import type { AuthResult, AuthUser, DayData, DayHistory, MacroTargets, UserProfi
 import { calcMacros } from './calculations';
 import { getDb, todayStr, daysAgo, type DbApi } from './db';
 import { ServerDb, clearServerSession, loadServerUrl, setServerUrlOnly, clearServerOverride } from './serverApi';
-import { getStepsToday, isNative } from './steps';
+import { getStepsToday, isNative, stepsPluginAvailable } from './steps';
 
 interface Store {
   loading: boolean;
@@ -41,6 +41,7 @@ interface Store {
   streak: number;
   weekWorkouts: number;
   steps: number | null;
+  stepsSupported: boolean;
   refreshSteps: () => Promise<void>;
   refreshHistory: () => Promise<void>;
   setWeight: (weight: number, date?: string) => Promise<void>;
@@ -74,6 +75,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [streak, setStreak] = useState(0);
   const [weekWorkouts, setWeekWorkouts] = useState(0);
   const [steps, setSteps] = useState<number | null>(null);
+  const [stepsSupported, setStepsSupported] = useState(false);
 
   const clearLocal = () => {
     setProfile(null);
@@ -87,6 +89,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setStreak(0);
     setWeekWorkouts(0);
     setSteps(null);
+    setStepsSupported(false);
   };
 
   const isActiveDay = (d: DayHistory) => d.kcal > 0 || d.waterMl > 0 || d.exercises > 0;
@@ -175,8 +178,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const dismissCelebration = () => setCelebration(null);
 
   const refreshSteps = async () => {
-    if (!user || !isNative()) {
-      if (!isNative()) setSteps(null);
+    const supported = isNative() && stepsPluginAvailable();
+    setStepsSupported(supported);
+    if (!user || !supported) {
+      if (!supported) setSteps(null);
       return;
     }
     try {
@@ -184,7 +189,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setSteps(s);
       if (s >= 10000) await unlock('pasos_10k', achievements);
     } catch {
-      setSteps(null);
+      setSteps(null); // p. ej. permiso denegado: el tile invita a activarlo
     }
   };
 
@@ -298,7 +303,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         serverUrl, setServerUrl, useOfficialServer,
         register, login, googleSignIn, logout,
         completeOnboarding, refresh, logFood, deleteFood, logWater, toggleExercise, resetAll, unlockMedal,
-        history, weights, streak, weekWorkouts, refreshHistory, setWeight, steps, refreshSteps,
+        history, weights, streak, weekWorkouts, refreshHistory, setWeight, steps, stepsSupported, refreshSteps,
       }}
     >
       {children}

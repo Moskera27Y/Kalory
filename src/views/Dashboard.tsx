@@ -14,7 +14,7 @@ function Skeleton({ className = '' }: { className?: string }) {
 }
 
 export default function Dashboard() {
-  const { profile, targets, consumed, proteinEaten, carbsEaten, fatEaten, day, logFood, logWater, activeDays, history, streak, loading, steps, refreshSteps } = useStore();
+  const { profile, targets, consumed, proteinEaten, carbsEaten, fatEaten, day, logFood, logWater, activeDays, history, streak, loading, steps, stepsSupported, refreshSteps } = useStore();
   const target = targets?.calories ?? 0;
   const burned = day.done.length * 90;
   const remaining = Math.max(0, target - consumed);
@@ -100,7 +100,7 @@ export default function Dashboard() {
         </div>
 
         {/* Tiles 2x2 */}
-        <motion.div variants={staggerChild} className={`grid grid-cols-2 gap-3 ${steps !== null ? 'lg:grid-cols-5' : 'lg:grid-cols-4'}`}>
+        <motion.div variants={staggerChild} className={`grid grid-cols-2 gap-3 ${stepsSupported ? 'lg:grid-cols-5' : 'lg:grid-cols-4'}`}>
           {tiles.map((t) => (
             <GlassCard key={t.label} className="glow-hover !p-4 text-center">
               <t.icon size={17} className="mx-auto text-muted" />
@@ -109,16 +109,50 @@ export default function Dashboard() {
               <p className="text-[11px] text-muted/70">{t.sub}</p>
             </GlassCard>
           ))}
-          {steps !== null && (
+          {stepsSupported && (
             <motion.button variants={staggerChild} onClick={() => refreshSteps()} title="Toca para actualizar" className="text-left">
               <GlassCard className="glow-hover !p-4 text-center h-full border-emerald/20">
                 <Footprints size={17} className="mx-auto text-emerald" />
-                <p className="mt-1 font-display text-2xl font-extrabold tabular-nums">{steps.toLocaleString('es')}</p>
+                <p className="mt-1 font-display text-2xl font-extrabold tabular-nums">
+                  {steps !== null ? steps.toLocaleString('es') : '• • •'}
+                </p>
                 <p className="text-[11px] uppercase tracking-wider text-muted">Pasos</p>
-                <p className="text-[11px] text-muted/70">meta {STEPS_GOAL.toLocaleString('es')}</p>
+                <p className="text-[11px] text-muted/70">{steps !== null ? `meta ${STEPS_GOAL.toLocaleString('es')}` : 'toca para activar'}</p>
               </GlassCard>
             </motion.button>
           )}
+        </motion.div>
+
+        {/* Siguiente acción sugerida */}
+        <motion.div variants={staggerChild}>
+          {(() => {
+            const h = new Date().getHours();
+            let action: { icon: typeof Flame; text: string; to: string; cta: string } | null = null;
+            if (day.foods.length === 0) {
+              action = {
+                icon: Plus,
+                text: h < 11 ? 'Empieza el día registrando tu desayuno' : h < 15 ? 'Registra tu almuerzo para no perder la cuenta' : 'Anota tu próxima comida',
+                to: '/dieta', cta: 'Registrar',
+              };
+            } else if (targets && day.waterMl < targets.waterMl * 0.5) {
+              action = { icon: Droplet, text: `Vas en ${(day.waterMl / 1000).toFixed(1)} L de agua: toma un vaso ahora`, to: '/', cta: 'Anotar agua' };
+            } else if (day.done.length === 0) {
+              action = { icon: Dumbbell, text: 'Te falta el entreno de hoy: abre tu rutina', to: '/rutinas', cta: 'Entrenar' };
+            } else if (targets && consumed < targets.calories * 0.9 && h >= 19) {
+              action = { icon: Beef, text: `Te faltan ${Math.round(targets.calories - consumed)} kcal: completa con una cena con proteína`, to: '/dieta', cta: 'Cenar' };
+            }
+            if (!action) return null;
+            const AIcon = action.icon;
+            return (
+              <Link to={action.to}>
+                <GlassCard className="glow-hover flex items-center gap-4 border-fire/30 bg-gradient-to-r from-fire/10 to-transparent">
+                  <span className="rounded-2xl bg-gradient-to-r from-[#F59E0B] to-[#EF4444] p-2.5 text-white shadow-glow-fire"><AIcon size={19} /></span>
+                  <p className="flex-1 text-sm font-semibold">{action.text}</p>
+                  <span className="rounded-xl bg-white/10 px-3 py-2 text-xs font-bold">{action.cta} →</span>
+                </GlassCard>
+              </Link>
+            );
+          })()}
         </motion.div>
 
         {/* Reto semanal */}
