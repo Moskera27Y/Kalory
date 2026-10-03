@@ -244,10 +244,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const dismissCelebration = () => setCelebration(null);
 
   const refreshSteps = async () => {
-    const supported = isNative() && stepsPluginAvailable();
+    const native = isNative();
+    const supported = native && stepsPluginAvailable();
     setStepsSupported(supported);
     if (!user || !supported) {
-      if (!supported) { setSteps(null); setStepsError(null); }
+      if (!supported) {
+        setSteps(null);
+        // En móvil sin plugin: el mensaje dice la causa real en vez de silencio
+        setStepsError(native ? 'Plugin de Salud ausente: genera el IPA/APK de nuevo.' : null);
+      }
       return;
     }
     try {

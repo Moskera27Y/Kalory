@@ -143,7 +143,6 @@ export default function Dashboard() {
                 <p className="text-[11px] uppercase tracking-wider text-muted">Pasos</p>
                 <p className="text-[11px] text-muted/70">
                   {steps !== null ? `meta ${STEPS_GOAL.toLocaleString('es')}`
-                    : !stepsSupported ? 'actualiza al IPA/APK nuevo y toca'
                     : stepsError ?? 'toca para activar'}
                 </p>
               </GlassCard>

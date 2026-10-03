@@ -97,8 +97,9 @@ function FoodLens({ meal, onAdd }: { meal: string; onAdd: (f: { name: string; kc
     try {
       const d = await takePhoto();
       await fromDataUrl(d);
-    } catch {
-      setError('No se pudo abrir la cámara. Revisa el permiso.');
+    } catch (e) {
+      const code = (e as { code?: string })?.code || 'camera_error';
+      setError(FOOD_ERRORS[code] ?? FOOD_ERRORS.camera_error);
     }
   };
 
@@ -107,8 +108,9 @@ function FoodLens({ meal, onAdd }: { meal: string; onAdd: (f: { name: string; kc
     try {
       const d = await pickPhoto();
       await fromDataUrl(d);
-    } catch {
-      setError('No se pudo abrir la galería.');
+    } catch (e) {
+      const code = (e as { code?: string })?.code || 'camera_error';
+      setError(FOOD_ERRORS[code] ?? FOOD_ERRORS.camera_error);
     }
   };
 

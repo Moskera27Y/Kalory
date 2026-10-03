@@ -49,28 +49,64 @@ export function downscale(dataUrl: string, maxDim = 1024, quality = 0.82): Promi
 
 /** Toma foto con la cámara nativa (Capacitor). Devuelve dataURL para vista previa. */
 export async function takePhoto(): Promise<string> {
-  const { Camera, CameraSource, CameraResultType } = await import('@capacitor/camera');
-  const p = await Camera.getPhoto({
-    quality: 85,
-    resultType: CameraResultType.DataUrl,
-    source: CameraSource.Camera,
-    correctOrientation: true,
-  });
-  if (!p.dataUrl) throw new Error('sin_foto');
+  let Camera;
+  try {
+    ({ Camera } = await import('@capacitor/camera'));
+  } catch {
+    throw Object.assign(new Error('sin_plugin'), { code: 'sin_plugin' });
+  }
+  const { CameraSource, CameraResultType } = await import('@capacitor/camera');
+  let p;
+  try {
+    p = await Camera.getPhoto({
+      quality: 85,
+      resultType: CameraResultType.DataUrl,
+      source: CameraSource.Camera,
+      correctOrientation: true,
+    });
+  } catch (e) {
+    throw classifyCameraError(e);
+  }
+  if (!p.dataUrl) throw Object.assign(new Error('sin_foto'), { code: 'sin_foto' });
   return p.dataUrl;
 }
 
 /** Elige foto de la galería nativa. */
 export async function pickPhoto(): Promise<string> {
-  const { Camera, CameraSource, CameraResultType } = await import('@capacitor/camera');
-  const p = await Camera.getPhoto({
-    quality: 85,
-    resultType: CameraResultType.DataUrl,
-    source: CameraSource.Photos,
-    correctOrientation: true,
-  });
-  if (!p.dataUrl) throw new Error('sin_foto');
+  let Camera;
+  try {
+    ({ Camera } = await import('@capacitor/camera'));
+  } catch {
+    throw Object.assign(new Error('sin_plugin'), { code: 'sin_plugin' });
+  }
+  const { CameraSource, CameraResultType } = await import('@capacitor/camera');
+  let p;
+  try {
+    p = await Camera.getPhoto({
+      quality: 85,
+      resultType: CameraResultType.DataUrl,
+      source: CameraSource.Photos,
+      correctOrientation: true,
+    });
+  } catch (e) {
+    throw classifyCameraError(e);
+  }
+  if (!p.dataUrl) throw Object.assign(new Error('sin_foto'), { code: 'sin_foto' });
   return p.dataUrl;
+}
+
+function classifyCameraError(e: unknown): Error {
+  const msg = String((e as Error)?.message || e || '');
+  if (/not implemented|unavailable|no implementation/i.test(msg)) {
+    return Object.assign(new Error('sin_plugin'), { code: 'sin_plugin' });
+  }
+  if (/denied|permission|permiso|not authorized|restricted/i.test(msg)) {
+    return Object.assign(new Error('permiso_denegado'), { code: 'permiso_denegado' });
+  }
+  if (/cancel|cancelled|dismissed|user cancelled/i.test(msg)) {
+    return Object.assign(new Error('cancelled'), { code: 'cancelled' });
+  }
+  return Object.assign(new Error(msg || 'camera_error'), { code: 'camera_error' });
 }
 
 export async function analyzeFood(base64: string, mime: string): Promise<FoodAnalysis> {
@@ -95,4 +131,9 @@ export const FOOD_ERRORS: Record<string, string> = {
   ia_no_disponible: 'IA ocupada ahora. Reintenta en 1 min.',
   ia_vacia: 'La IA no devolvió análisis. Reintenta.',
   server_error: 'No se pudo contactar al servidor. Revisa tu conexión.',
+  sin_plugin: 'Esta versión no trae cámara: genera el IPA/APK de nuevo con el código actual.',
+  permiso_denegado: 'Permiso denegado: abre Ajustes → Kalory y activa Cámara y Fotos.',
+  cancelled: 'Cancelaste la foto.',
+  camera_error: 'No se pudo usar la cámara. Reintenta.',
+  sin_foto: 'No se obtuvo la foto. Reintenta.',
 };

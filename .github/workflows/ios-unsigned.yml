@@ -17,6 +17,9 @@ jobs:
       - name: Código
         uses: actions/checkout@v4
 
+      - name: Versión (verifica este SHA con tu git log)
+        run: git rev-parse --short HEAD
+
       - name: Node 20
         uses: actions/setup-node@v4
         with:
