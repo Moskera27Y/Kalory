@@ -505,6 +505,7 @@ const handlers = {
     run('DELETE FROM water_log WHERE user_id=?', [uid]);
     run('DELETE FROM workout_log WHERE user_id=?', [uid]);
     run('DELETE FROM achievement WHERE user_id=?', [uid]);
+    run('DELETE FROM weight_log WHERE user_id=?', [uid]);
     persist();
     return true;
   },

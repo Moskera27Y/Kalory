@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { GlassCard } from '../components/ui';
 import { useStore } from '../lib/store';
 import { getAssignedPlan } from '../lib/library';
-import { saveHealthWorkout } from '../lib/steps';
+import { KCAL_PER_EXERCISE, saveHealthWorkout } from '../lib/steps';
 
 interface Exercise { name: string; sets: string; tip: string }
 
@@ -84,7 +84,7 @@ function RestTimer() {
 }
 
 /** Sesión guiada a pantalla completa: series, descanso automático y avance. */
-function SessionPlayer({ exercises, onDone, onClose }: { exercises: Exercise[]; onDone: (names: string[]) => void; onClose: () => void }) {
+function SessionPlayer({ exercises, onDone, onClose }: { exercises: Exercise[]; onDone: (names: string[], rating: number) => void; onClose: () => void }) {
   const [exIdx, setExIdx] = useState(0);
   const [setNum, setSetNum] = useState(0);
   const [rest, setRest] = useState(0);
@@ -142,7 +142,7 @@ function SessionPlayer({ exercises, onDone, onClose }: { exercises: Exercise[]; 
           </motion.span>
           <h2 className="relative mt-4 font-display text-3xl font-extrabold">¡Sesión <span className="text-gradient-emerald">completa</span>!</h2>
           <div className="relative mt-4 grid grid-cols-3 gap-2 text-center">
-            {[['Tiempo', `${mins} min`], ['Ejercicios', `${exercises.length}`], ['Quema est.', `${exercises.length * 90}`]].map(([k, v]) => (
+            {[['Tiempo', `${mins} min`], ['Ejercicios', `${exercises.length}`], ['Quema est.', `${exercises.length * KCAL_PER_EXERCISE}`]].map(([k, v]) => (
               <div key={k} className="rounded-xl bg-white/5 border border-white/10 p-3">
                 <p className="text-[11px] text-muted">{k}</p>
                 <p className="font-display text-lg font-extrabold">{v}</p>
@@ -157,7 +157,7 @@ function SessionPlayer({ exercises, onDone, onClose }: { exercises: Exercise[]; 
               </motion.button>
             ))}
           </div>
-          <motion.button whileTap={{ scale: 0.97 }} onClick={() => onDone(exercises.map((x) => x.name))}
+          <motion.button whileTap={{ scale: 0.97 }} onClick={() => onDone(exercises.map((x) => x.name), rating)}
             className="btn-emerald relative mt-5 w-full">
             Guardar y terminar
           </motion.button>
@@ -288,12 +288,15 @@ export default function Workouts() {
   const planName = custom ? custom.name : isBeginner ? 'Semana 1 · Acondicionamiento' : daysPerWeek > 3 ? 'Tren superior / inferior' : 'Cuerpo completo';
   const todayIdx = (new Date().getDay() + 6) % 7;
 
-  const finishSession = async (names: string[]) => {
+  const finishSession = async (names: string[], rating: number) => {
+    try {
+      localStorage.setItem('kalory-last-rating', JSON.stringify({ at: new Date().toISOString(), rating }));
+    } catch { /* ignore */ }
     for (const n of names) {
       if (!day.done.includes(n)) await toggleExercise(n, exercises.length);
     }
     // Guarda el entreno en Salud del teléfono (iOS) sin bloquear
-    saveHealthWorkout(sessionStart, Date.now(), names.length * 90).catch(() => undefined);
+    saveHealthWorkout(sessionStart, Date.now(), names.length * KCAL_PER_EXERCISE).catch(() => undefined);
     setSession(false);
   };
 

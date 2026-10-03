@@ -1,4 +1,6 @@
 # Railway: usa el Dockerfile de esta carpeta y vigila la salud del API.
+# IMPORTANTE: crea un volumen en el dashboard montado en /srv/data y define
+# DATA_FILE=/srv/data/kalory-online.db o perderás los datos en cada redespliegue.
 [build]
 builder = "DOCKERFILE"
 

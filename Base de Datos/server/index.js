@@ -22,7 +22,18 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '60146882018-1ad06p3sgq
 // Cliente tipo Web (solo para el login móvil vía navegador). Si no se define, se usa el de escritorio.
 const GOOGLE_WEB_CLIENT_ID = process.env.GOOGLE_WEB_CLIENT_ID || '';
 const GOOGLE_WEB_CLIENT_SECRET = process.env.GOOGLE_WEB_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET || '';
-const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, 'data', 'kalory-online.db');
+// En Railway monta un volumen en /srv/data y define DATA_FILE=/srv/data/kalory-online.db.
+// Si el directorio existe se usa solo (evita perder datos al redesplegar).
+const DATA_FILE = process.env.DATA_FILE || ((() => {
+  try {
+    const cand = '/srv/data/kalory-online.db';
+    require('fs').mkdirSync(require('path').dirname(cand), { recursive: true });
+    return cand;
+  } catch { return path.join(__dirname, 'data', 'kalory-online.db'); }
+})());
+if (!process.env.JWT_SECRET || !process.env.ADMIN_TOKEN) {
+  console.warn('[seguridad] JWT_SECRET/ADMIN_TOKEN por defecto: define ambos en producción.');
+}
 
 let SQL = null;
 let db = null;
@@ -126,6 +137,26 @@ const pub = (r) => ({ id: r.id, name: r.name, email: r.email, provider: r.provid
 const hashPw = (pw, salt) => crypto.scryptSync(String(pw), salt, 64).toString('hex');
 const sign = (uid) => jwt.sign({ uid }, JWT_SECRET, { expiresIn: '30d' });
 const validEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(e || '').trim());
+const validDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || '')) && !Number.isNaN(Date.parse(String(d)));
+const num = (v, def = 0) => (Number.isFinite(Number(v)) ? Number(v) : def);
+const str = (v, max = 120) => String(v ?? '').trim().slice(0, max);
+
+// Límite simple en memoria: max intentos por ventana (anti fuerza bruta / spam IA)
+const _hits = new Map(); // key -> number[]
+function rateLimit(key, max, ms) {
+  const nowMs = Date.now();
+  const arr = (_hits.get(key) || []).filter((t) => nowMs - t < ms);
+  arr.push(nowMs);
+  _hits.set(key, arr);
+  if (_hits.size > 5000) for (const k of _hits.keys()) { _hits.delete(k); break; }
+  return arr.length <= max;
+}
+setInterval(() => {
+  const nowMs = Date.now();
+  for (const [k, v] of _hits) {
+    if (!v.some((t) => nowMs - t < 15 * 60 * 1000)) _hits.delete(k);
+  }
+}, 5 * 60 * 1000).unref?.();
 
 function auth(req, res, next) {
   const h = req.headers.authorization || '';
@@ -157,6 +188,14 @@ async function verifyGoogleIdToken(idToken) {
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
+// Envuelve rutas async: Express 4 no captura rechazos (evita caídas por unhandledRejection)
+['get', 'post', 'put', 'delete'].forEach((m) => {
+  const orig = app[m].bind(app);
+  app[m] = (p, ...handlers) => orig(p, ...handlers.map((h) =>
+    (typeof h === 'function' && h.constructor.name === 'AsyncFunction'
+      ? (req, res, next) => Promise.resolve(h(req, res, next)).catch(next)
+      : h)));
+});
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Admin-Token');
@@ -168,6 +207,9 @@ app.use((req, res, next) => {
 // ---------- auth ----------
 app.post('/api/auth/register', async (req, res) => {
   await ready();
+  if (!rateLimit('reg:' + req.ip, 8, 10 * 60 * 1000)) {
+    return res.status(429).json({ ok: false, error: 'demasiados_intentos' });
+  }
   const name = String(req.body.name || '').trim();
   const email = String(req.body.email || '').trim().toLowerCase();
   const password = String(req.body.password || '');
@@ -187,6 +229,9 @@ app.post('/api/auth/register', async (req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
   await ready();
+  if (!rateLimit('login:' + req.ip + ':' + String(req.body.email || '').toLowerCase(), 12, 10 * 60 * 1000)) {
+    return res.status(429).json({ ok: false, error: 'demasiados_intentos' });
+  }
   const email = String(req.body.email || '').trim().toLowerCase();
   const u = rows('SELECT * FROM users WHERE email=?', [email])[0];
   if (!u || !u.pwd_hash || hashPw(req.body.password || '', u.pwd_salt) !== u.pwd_hash) {
@@ -197,6 +242,9 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/auth/google', async (req, res) => {
   await ready();
+  if (!rateLimit('g:' + req.ip, 20, 10 * 60 * 1000)) {
+    return res.status(429).json({ ok: false, error: 'demasiados_intentos' });
+  }
   try {
     const g = await verifyGoogleIdToken(String(req.body.idToken || ''));
     const u = await findOrCreateGoogleUser(g);
@@ -291,10 +339,9 @@ app.get('/api/auth/google/callback', async (req, res) => {
     if (!tokenRes.ok) throw new Error('canje_fallido');
     const tok = await tokenRes.json();
     if (!tok.id_token) throw new Error('canje_fallido');
-    const payload = JSON.parse(Buffer.from(tok.id_token.split('.')[1], 'base64').toString('utf8'));
-    const validAud = [GOOGLE_CLIENT_ID, GOOGLE_WEB_CLIENT_ID].filter(Boolean);
-    if (!payload.sub || !payload.email || !validAud.includes(payload.aud)) throw new Error('perfil_invalido');
-    const u = await findOrCreateGoogleUser({ sub: payload.sub, email: payload.email, name: payload.name || payload.email });
+    // Verifica firma y audiencia en Google (no basta decodificar el JWT)
+    const g = await verifyGoogleIdToken(tok.id_token);
+    const u = await findOrCreateGoogleUser(g);
     pend.token = sign(u.id);
     pend.user = pub(u);
     persist();
@@ -342,6 +389,10 @@ Si no hay comida clara, dilo amablemente y pide otra foto. Termina con una líne
 
 app.post('/api/food/analyze', auth, async (req, res) => {
   try {
+    // Cuota diaria por usuario (el plan gratuito es compartido)
+    if (!rateLimit('food:' + req.uid + ':' + now().slice(0, 10), 10, 24 * 60 * 60 * 1000)) {
+      return res.status(429).json({ ok: false, error: 'cuota_diaria' });
+    }
     const { imageBase64, mime } = req.body || {};
     if (!imageBase64 || typeof imageBase64 !== 'string' || imageBase64.length < 1000) {
       return res.status(400).json({ ok: false, error: 'sin_imagen' });
@@ -430,18 +481,28 @@ app.get('/api/bootstrap', auth, async (req, res) => {
 
 app.put('/api/profile', auth, async (req, res) => {
   await ready();
+  const pj = JSON.stringify(req.body.profile ?? null);
+  const tj = JSON.stringify(req.body.targets ?? null);
+  if (pj.length > 20000 || tj.length > 20000) {
+    return res.status(400).json({ ok: false, error: 'perfil_grande' });
+  }
   run(`INSERT INTO user_profile(user_id, profile_json, targets_json) VALUES(?,?,?)
        ON CONFLICT(user_id) DO UPDATE SET profile_json=excluded.profile_json, targets_json=excluded.targets_json`,
-    [req.uid, JSON.stringify(req.body.profile), JSON.stringify(req.body.targets)]);
+    [req.uid, pj, tj]);
   persist();
   res.json({ ok: true });
 });
 
 app.post('/api/foods', auth, async (req, res) => {
   await ready();
-  const b = req.body;
+  const b = req.body || {};
+  if (!validDate(b.date)) return res.status(400).json({ ok: false, error: 'fecha_invalida' });
+  const kcal = num(b.kcal);
+  if (!(kcal > 0 && kcal <= 20000)) return res.status(400).json({ ok: false, error: 'kcal_invalida' });
   run('INSERT INTO food_log(user_id,date,name,kcal,protein,carbs,fat,meal,created_at) VALUES(?,?,?,?,?,?,?,?,?)',
-    [req.uid, b.date, b.name, b.kcal, b.protein || 0, b.carbs || 0, b.fat || 0, b.meal || 'extra', now()]);
+    [req.uid, b.date, str(b.name, 120) || 'Comida', Math.round(kcal),
+     Math.min(2000, Math.max(0, num(b.protein))), Math.min(5000, Math.max(0, num(b.carbs))),
+     Math.min(2000, Math.max(0, num(b.fat))), str(b.meal, 20) || 'extra', now()]);
   persist();
   res.json({ ok: true, id: rows('SELECT last_insert_rowid() AS id')[0].id });
 });
@@ -455,7 +516,10 @@ app.delete('/api/foods/:id', auth, async (req, res) => {
 
 app.post('/api/water', auth, async (req, res) => {
   await ready();
-  run('INSERT INTO water_log(user_id,date,ml,created_at) VALUES(?,?,?,?)', [req.uid, req.body.date, req.body.ml, now()]);
+  if (!validDate(req.body.date)) return res.status(400).json({ ok: false, error: 'fecha_invalida' });
+  const ml = Math.round(num(req.body.ml));
+  if (!(ml > 0 && ml <= 5000)) return res.status(400).json({ ok: false, error: 'cantidad_invalida' });
+  run('INSERT INTO water_log(user_id,date,ml,created_at) VALUES(?,?,?,?)', [req.uid, req.body.date, ml, now()]);
   persist();
   const w = rows('SELECT COALESCE(SUM(ml),0) AS total FROM water_log WHERE user_id=? AND date=?', [req.uid, req.body.date])[0];
   res.json({ ok: true, total: Math.max(0, w.total) });
@@ -463,7 +527,9 @@ app.post('/api/water', auth, async (req, res) => {
 
 app.post('/api/exercises/toggle', auth, async (req, res) => {
   await ready();
-  const { date, exercise } = req.body;
+  const date = str(req.body.date, 10);
+  const exercise = str(req.body.exercise, 120);
+  if (!validDate(date) || !exercise) return res.status(400).json({ ok: false, error: 'dato_invalido' });
   const ex = rows('SELECT 1 AS ok FROM workout_log WHERE user_id=? AND date=? AND exercise=?', [req.uid, date, exercise]).length > 0;
   if (ex) run('DELETE FROM workout_log WHERE user_id=? AND date=? AND exercise=?', [req.uid, date, exercise]);
   else run('INSERT INTO workout_log(user_id,date,exercise) VALUES(?,?,?)', [req.uid, date, exercise]);
@@ -473,8 +539,10 @@ app.post('/api/exercises/toggle', auth, async (req, res) => {
 
 app.post('/api/achievements/unlock', auth, async (req, res) => {
   await ready();
+  const id = str(req.body.id, 40);
+  if (!id) return res.status(400).json({ ok: false, error: 'dato_invalido' });
   const at = now();
-  run('INSERT INTO achievement(user_id,id,unlocked_at) VALUES(?,?,?) ON CONFLICT(user_id,id) DO NOTHING', [req.uid, req.body.id, at]);
+  run('INSERT INTO achievement(user_id,id,unlocked_at) VALUES(?,?,?) ON CONFLICT(user_id,id) DO NOTHING', [req.uid, id, at]);
   persist();
   res.json({ ok: true, at });
 });
@@ -487,6 +555,7 @@ app.delete('/api/account/data', auth, async (req, res) => {
   run('DELETE FROM workout_log WHERE user_id=?', [req.uid]);
   run('DELETE FROM achievement WHERE user_id=?', [req.uid]);
   run('DELETE FROM weight_log WHERE user_id=?', [req.uid]);
+  run('DELETE FROM friendships WHERE user_id=? OR friend_id=?', [req.uid, req.uid]);
   persist();
   res.json({ ok: true });
 });
@@ -494,23 +563,34 @@ app.delete('/api/account/data', auth, async (req, res) => {
 // ---------- peso ----------
 app.post('/api/weight', auth, async (req, res) => {
   await ready();
+  if (!validDate(req.body.date)) return res.status(400).json({ ok: false, error: 'fecha_invalida' });
+  const weight = num(req.body.weight);
+  if (!(weight > 20 && weight <= 400)) return res.status(400).json({ ok: false, error: 'peso_invalido' });
   run(`INSERT INTO weight_log(user_id,date,weight,created_at) VALUES(?,?,?,?)
        ON CONFLICT(user_id,date) DO UPDATE SET weight=excluded.weight, created_at=excluded.created_at`,
-    [req.uid, req.body.date, req.body.weight, now()]);
+    [req.uid, req.body.date, Math.round(weight * 10) / 10, now()]);
   persist();
   res.json({ ok: true });
 });
 
 app.get('/api/weights', auth, async (req, res) => {
   await ready();
-  const { from = '2000-01-01', to = '2999-12-31' } = req.query;
+  let { from = '2000-01-01', to = '2999-12-31' } = req.query;
+  if (!validDate(from)) from = '2000-01-01';
+  if (!validDate(to)) to = '2999-12-31';
   res.json({ ok: true, weights: rows('SELECT date, weight FROM weight_log WHERE user_id=? AND date>=? AND date<=? ORDER BY date', [req.uid, from, to]) });
 });
 
-// ---------- historial agregado por día ----------
+// ---------- historial agregado por día (máx 366 días por petición) ----------
 app.get('/api/history', auth, async (req, res) => {
   await ready();
-  const { from = '2000-01-01', to = '2999-12-31' } = req.query;
+  let { from = '2000-01-01', to = '2999-12-31' } = req.query;
+  if (!validDate(from)) from = '2000-01-01';
+  if (!validDate(to)) to = '2999-12-31';
+  if (from > to) [from, to] = [to, from];
+  if ((Date.parse(to) - Date.parse(from)) / 86400000 > 366) {
+    from = nextDay(to, -366);
+  }
   const days = new Map();
   const get = (d) => {
     if (!days.has(d)) days.set(d, { date: d, kcal: 0, protein: 0, carbs: 0, fat: 0, waterMl: 0, exercises: 0, weight: null });
@@ -535,9 +615,9 @@ app.get('/api/history', auth, async (req, res) => {
   res.json({ ok: true, days: out });
 });
 
-function nextDay(s) {
+function nextDay(s, n = 1) {
   const d = new Date(s + 'T12:00:00');
-  d.setDate(d.getDate() + 1);
+  d.setDate(d.getDate() + n);
   return d.toISOString().slice(0, 10);
 }
 
@@ -563,7 +643,7 @@ app.get('/api/export', auth, async (req, res) => {
 });
 
 // ---------- versión (aviso de actualización en la app) ----------
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.6.1';
 app.get('/api/version', (req, res) => {
   res.json({
     ok: true,
@@ -607,6 +687,9 @@ app.get('/api/social/code', auth, async (req, res) => {
 
 app.post('/api/social/add', auth, async (req, res) => {
   await ready();
+  if (!rateLimit('add:' + req.uid, 10, 10 * 60 * 1000)) {
+    return res.status(429).json({ ok: false, error: 'demasiados_intentos' });
+  }
   const fid = uidFromCode(req.body.code);
   if (!fid) return res.status(400).json({ ok: false, error: 'codigo_invalido' });
   if (fid === req.uid) return res.status(400).json({ ok: false, error: 'eres_tu' });
@@ -645,6 +728,8 @@ app.get('/api/social/leaderboard', auth, async (req, res) => {
 // ---------- admin ----------
 app.get('/api/admin/users', adminOnly, async (req, res) => {
   await ready();
+  const limit = Math.min(500, Math.max(1, num(req.query.limit, 200)));
+  const offset = Math.max(0, num(req.query.offset, 0));
   const users = rows(`
     SELECT u.id, u.name, u.email, u.provider, u.created_at,
       (SELECT COUNT(*) FROM food_log f WHERE f.user_id=u.id) AS foods,
@@ -656,13 +741,13 @@ app.get('/api/admin/users', adminOnly, async (req, res) => {
         SELECT MAX(created_at) AS d FROM food_log WHERE user_id=u.id
         UNION ALL SELECT MAX(created_at) FROM water_log WHERE user_id=u.id
         UNION ALL SELECT u.created_at) ) AS last_activity
-    FROM users u ORDER BY u.id`);
+    FROM users u ORDER BY u.id LIMIT ? OFFSET ?`, [limit, offset]);
   const totals = {
-    users: users.length,
+    users: rows('SELECT COUNT(*) AS n FROM users')[0].n,
     foods: rows('SELECT COUNT(*) AS n FROM food_log')[0].n,
     medals: rows('SELECT COUNT(*) AS n FROM achievement')[0].n,
   };
-  res.json({ ok: true, totals, users });
+  res.json({ ok: true, totals, users, limit, offset });
 });
 
 app.get('/api/admin/users/:id', adminOnly, async (req, res) => {
@@ -684,6 +769,15 @@ app.get('/api/admin/users/:id', adminOnly, async (req, res) => {
 // ---------- panel + salud ----------
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'admin.html')));
 app.get('/api/health', (req, res) => res.json({ ok: true, service: 'kalory-server', time: now() }));
+
+// Errores async no capturados → 500 JSON en vez de colgar la petición
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  console.error('[api]', req.method, req.path, err?.message || err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ ok: false, error: 'server_error' });
+});
+process.on('unhandledRejection', (e) => console.error('[unhandled]', e?.message || e));
 
 ready().then(() => {
   app.listen(PORT, '0.0.0.0', () => console.log(`Kalory Server en http://0.0.0.0:${PORT} — panel: /admin`));

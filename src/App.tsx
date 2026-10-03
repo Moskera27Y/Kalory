@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { HashRouter, Routes, Route, Navigate, useLocation, NavLink } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { LayoutDashboard, Dumbbell, Salad, User, TrendingUp, Users, BookOpen } from 'lucide-react';
@@ -27,14 +27,19 @@ function MedalToast() {
   const { achievements } = useStore();
   const [shown, setShown] = useState(0);
   const [visible, setVisible] = useState(false);
+  const init = useRef(false);
   useEffect(() => {
+    // La primera carga trae las medallas viejas: no festejar, solo sincronizar
+    if (!init.current) {
+      init.current = true;
+      setShown(achievements.length);
+      return;
+    }
     if (achievements.length > shown) {
       setShown(achievements.length);
-      if (shown > 0) {
-        setVisible(true);
-        const t = setTimeout(() => setVisible(false), 4500);
-        return () => clearTimeout(t);
-      }
+      setVisible(true);
+      const t = setTimeout(() => setVisible(false), 4500);
+      return () => clearTimeout(t);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [achievements.length]);

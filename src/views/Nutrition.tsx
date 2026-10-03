@@ -161,6 +161,7 @@ export default function Nutrition() {
   const [scanning, setScanning] = useState(false);
   const [favs, setFavs] = useState<{ name: string; kcal: number; protein: number; carbs: number; fat: number; n: number }[]>([]);
   const [repeatMsg, setRepeatMsg] = useState('');
+  const [repeating, setRepeating] = useState(false);
 
   useEffect(() => {
     // Tus frecuentes: lo que más registraste (últimos datos disponibles)
@@ -187,18 +188,24 @@ export default function Nutrition() {
 
   /** Copia las comidas de ayer al día de hoy de un toque. */
   const repeatYesterday = async () => {
-    const y = new Date();
-    y.setDate(y.getDate() - 1);
-    const key = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`;
-    const d = await getDb().getDay(key);
-    if (d.foods.length === 0) {
-      setRepeatMsg('Ayer no registraste comidas.');
-      return;
+    if (repeating) return;
+    setRepeating(true);
+    try {
+      const y = new Date();
+      y.setDate(y.getDate() - 1);
+      const key = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`;
+      const d = await getDb().getDay(key);
+      if (d.foods.length === 0) {
+        setRepeatMsg('Ayer no registraste comidas.');
+        return;
+      }
+      for (const f of d.foods) {
+        await logFood({ name: f.name, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, meal: f.meal });
+      }
+      setRepeatMsg(`Copiadas ${d.foods.length} comidas de ayer.`);
+    } finally {
+      setRepeating(false);
     }
-    for (const f of d.foods) {
-      await logFood({ name: f.name, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, meal: f.meal });
-    }
-    setRepeatMsg(`Copiadas ${d.foods.length} comidas de ayer.`);
   };
 
   const results = CATALOG.filter((f) => f.name.toLowerCase().includes(q.toLowerCase()));
@@ -223,8 +230,14 @@ export default function Nutrition() {
     setLooking(true);
     setFound(null);
     setCodeError('');
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
     try {
-      const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(c)}.json?fields=product_name,brands,nutriments`);
+      const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(c)}.json?fields=product_name,brands,nutriments`, { signal: ctrl.signal });
+      if (!r.ok) {
+        setCodeError('La base de productos no responde. Reintenta.');
+        return;
+      }
       const d = await r.json();
       if (d.status !== 1 || !d.product?.nutriments) {
         setCodeError('Producto no encontrado. Revisa el código.');
@@ -242,6 +255,7 @@ export default function Nutrition() {
     } catch {
       setCodeError('Sin conexión a la base de productos.');
     } finally {
+      clearTimeout(timer);
       setLooking(false);
     }
   };
@@ -285,8 +299,8 @@ export default function Nutrition() {
           <button key={m} onClick={() => setMeal(m)}
             className={`chip !text-xs ${meal === m ? 'border-emerald/60 bg-emerald/15 text-white' : 'text-muted'}`}>{m}</button>
         ))}
-        <button onClick={repeatYesterday} className="chip !text-xs !border-fire/40 text-fire flex items-center gap-1.5">
-          <History size={13} /> Repetir ayer
+        <button onClick={repeatYesterday} disabled={repeating} className="chip !text-xs !border-fire/40 text-fire flex items-center justify-center gap-1.5 disabled:opacity-50">
+          <History size={13} /> {repeating ? 'Copiando…' : 'Repetir ayer'}
         </button>
       </div>
       {repeatMsg && <p className="text-xs text-emerald">{repeatMsg}</p>}

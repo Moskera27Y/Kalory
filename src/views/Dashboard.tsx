@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { GlassCard } from '../components/ui';
 import { ActivityRings, AnimatedCounter, WaterTracker } from '../components/widgets';
 import FastingWidget from '../components/FastingWidget';
-import { STEPS_GOAL, isNative, saveWidgetSnapshot } from '../lib/steps';
+import { STEPS_GOAL, KCAL_PER_EXERCISE, isNative, saveWidgetSnapshot } from '../lib/steps';
 import { saveSleep, listSleep, avgSleep } from '../lib/sleep';
 import { coachMessage, type CoachIcon } from '../lib/coach';
 import { fastingState, PROTOCOLS } from '../lib/fasting';
@@ -20,7 +20,7 @@ function Skeleton({ className = '' }: { className?: string }) {
 export default function Dashboard() {
   const { user, profile, targets, consumed, proteinEaten, carbsEaten, fatEaten, day, logFood, logWater, activeDays, history, streak, loading, steps, stepsSupported, stepsError, refreshSteps } = useStore();
   const target = targets?.calories ?? 0;
-  const burned = day.done.length * 90;
+  const burned = day.done.length * KCAL_PER_EXERCISE;
   const remaining = Math.max(0, target - consumed);
 
   const [quickName, setQuickName] = useState('');

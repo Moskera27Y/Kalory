@@ -12,7 +12,7 @@ export default function Informe() {
   const week = history.filter((d) => d.date >= from && d.date <= to);
   const sum = (f: (d: (typeof week)[number]) => number) => week.reduce((a, d) => a + f(d), 0);
   const totKcal = Math.round(sum((d) => d.kcal));
-  const avgKcal = week.length ? Math.round(totKcal / 7) : 0;
+  const avgKcal = week.length ? Math.round(totKcal / week.length) : 0;
   const waters = week.filter((d) => targets && d.waterMl >= targets.waterMl).length;
   const trainDays = week.filter((d) => d.exercises > 0).length;
   const weights = week.map((d) => d.weight).filter((w): w is number => w != null);
@@ -39,7 +39,7 @@ export default function Informe() {
           {[
             ['Kcal promedio', `${avgKcal}`],
             ['Días con entreno', `${trainDays}`],
-            ['Días con meta de agua', `${waters}/7`],
+            [`Días con meta de agua`, `${waters}/${week.length || 7}`],
             ['Peso', weights.length ? `${weights[0]} → ${weights[weights.length - 1]} kg` : '—'],
           ].map(([k, v]) => (
             <div key={k} className="rounded-xl bg-white/5 border border-white/10 p-3">
@@ -57,6 +57,9 @@ export default function Informe() {
             </tr>
           </thead>
           <tbody>
+            {week.length === 0 && (
+              <tr><td colSpan={6} className="py-6 text-center text-muted">Sin datos esta semana: registra comidas, agua o entrenos.</td></tr>
+            )}
             {week.map((d) => (
               <tr key={d.date} className="border-b border-white/5">
                 <td className="py-2 font-semibold">{d.date}</td>

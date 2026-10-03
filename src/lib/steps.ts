@@ -3,7 +3,10 @@
  * vía cordova-plugin-health). En PC/navegador no disponible.
  */
 
-export const STEPS_GOAL = 8000;
+export const STEPS_GOAL = 10000;
+
+/** Quema estimada por ejercicio registrado (misma meta que la medalla pasos_10k). */
+export const KCAL_PER_EXERCISE = 90;
 
 export function isNative(): boolean {
   try {

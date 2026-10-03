@@ -102,9 +102,13 @@ async function signInWithGoogle(clientId, clientSecret) {
     e.detail = 'sin id_token';
     throw e;
   }
-  const payload = JSON.parse(Buffer.from(tok.id_token.split('.')[1], 'base64').toString('utf8'));
-  if (!payload.sub || !payload.email) throw err('bad_profile');
-  return { sub: payload.sub, email: payload.email, name: payload.name || payload.email, idToken: tok.id_token };
+  // Verifica firma y audiencia en Google (no basta decodificar el JWT)
+  const chk = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(tok.id_token)}`);
+  if (!chk.ok) throw err('token_invalido');
+  const info = await chk.json().catch(() => null);
+  if (!info || !info.sub || !info.email) throw err('bad_profile');
+  if (info.aud !== clientId) throw err('aud_invalido');
+  return { sub: info.sub, email: info.email, name: info.name || info.email, idToken: tok.id_token };
 }
 
 module.exports = { signInWithGoogle };
