@@ -1,7 +1,7 @@
 {
   "name": "kalory-mobil",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.6.1",
   "description": "Kalory Android — envoltorio Capacitor de la app web",
   "scripts": {
     "sync": "npm run build-web && npx cap sync android",
