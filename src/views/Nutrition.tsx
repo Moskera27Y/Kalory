@@ -166,6 +166,8 @@ export default function Nutrition() {
   const [custom, setCustom] = useState({ name: '', kcal: '', p: '', c: '', f: '' });
   const [code, setCode] = useState('');
   const [grams, setGrams] = useState('100');
+  const [unit, setUnit] = useState<'g' | 'ml' | 'ud'>('g');
+  const [unitWeight, setUnitWeight] = useState('');
   const [looking, setLooking] = useState(false);
   const [found, setFound] = useState<null | { name: string; kcal100: number; p100: number; c100: number; f100: number }>(null);
   const [codeError, setCodeError] = useState('');
@@ -295,11 +297,14 @@ export default function Nutrition() {
   const addFound = async () => {
     if (!found || addingFound) return;
     setAddingFound(true);
-    const g = Math.max(1, Number(grams) || 100);
+    const qty = Math.max(1, Number(grams) || 100);
+    const gramsPerUnit = unit === 'ud' ? Math.max(1, Number(unitWeight) || 100) : 1;
+    const g = unit === 'ud' ? qty * gramsPerUnit : qty;
     const k = g / 100;
+    const label = unit === 'g' ? `${g}g` : unit === 'ml' ? `${qty}ml` : `${qty} ud (${gramsPerUnit}g c/u)`;
     try {
       await logFood({
-        name: `${found.name} (${g}g)`,
+        name: `${found.name} (${label})`,
         kcal: Math.round(found.kcal100 * k),
         protein: Math.round(found.p100 * k * 10) / 10,
         carbs: Math.round(found.c100 * k * 10) / 10,
@@ -375,6 +380,7 @@ export default function Nutrition() {
               <input value={custom.f} onChange={(e) => setCustom({ ...custom, f: e.target.value })} type="number" min={0} className="input-kalory text-sm" placeholder="Grasa g" />
             </div>
             <motion.button whileTap={{ scale: 0.97 }} onClick={addCustom} disabled={addingCustom} className="btn-emerald text-sm disabled:opacity-50">{addingCustom ? 'Guardando…' : `Registrar en ${meal}`}</motion.button>
+            <p className="mt-2 text-[11px] text-muted">Solo necesitas nombre y calorías; los macros son opcionales.</p>
           </div>
 
           <p className="mt-5 text-xs uppercase tracking-widest text-muted">Código de barras · {meal}</p>
@@ -404,7 +410,15 @@ export default function Nutrition() {
               <p className="text-xs font-bold">{found.name}</p>
               <p className="mt-1 text-[11px] text-muted">Por 100g: {Math.round(found.kcal100)} kcal · P {found.p100}g · C {found.c100}g · G {found.f100}g</p>
               <div className="mt-2 flex gap-2">
-                <input value={grams} onChange={(e) => setGrams(e.target.value)} type="number" min={1} className="input-kalory !py-2 text-sm" placeholder="Gramos" />
+                <select value={unit} onChange={(e) => setUnit(e.target.value as 'g' | 'ml' | 'ud')} className="input-kalory !py-2 text-sm w-20">
+                  <option value="g">Gramos</option>
+                  <option value="ml">Ml</option>
+                  <option value="ud">Unidades</option>
+                </select>
+                <input value={grams} onChange={(e) => setGrams(e.target.value)} type="number" min={1} className="input-kalory !py-2 text-sm" placeholder={unit === 'ud' ? 'Cantidad' : unit === 'ml' ? 'Ml' : 'Gramos'} />
+                {unit === 'ud' && (
+                  <input value={unitWeight} onChange={(e) => setUnitWeight(e.target.value)} type="number" min={1} className="input-kalory !py-2 text-sm" placeholder="g por unidad" />
+                )}
                 <motion.button whileTap={{ scale: 0.97 }} onClick={addFound} disabled={addingFound} className="btn-emerald !py-2 text-sm whitespace-nowrap disabled:opacity-50">{addingFound ? 'Añadiendo…' : `Añadir a ${meal}`}</motion.button>
               </div>
             </div>
