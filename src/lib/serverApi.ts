@@ -16,7 +16,7 @@ const LS_KEY = 'kalory-server-v1';
 /** Servidor oficial: la app se conecta sola sin pedir nada al usuario.
  *  Se rellena con la URL real al desplegar el servidor (https://...).
  *  Vacío = modo local (datos solo en este equipo). */
-export const DEFAULT_SERVER_URL = 'https://kalory-production.up.railway.app';
+export const DEFAULT_SERVER_URL = 'https://kalory-api.onrender.com';
 
 export function loadServerUrl(): string {
   try {
