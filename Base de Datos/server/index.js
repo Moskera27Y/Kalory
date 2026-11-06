@@ -536,6 +536,47 @@ app.put('/api/profile', auth, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/api/food/estimate', auth, async (req, res) => {
+  try {
+    const name = String(req.body?.name || '').trim();
+    if (!name) return res.status(400).json({ ok: false, error: 'sin_nombre' });
+    if (!OPENROUTER_API_KEY) return res.status(503).json({ ok: false, error: 'sin_ia' });
+    const prompt = `Estima los valores nutricionales por 100g del alimento "${name}". Responde SOLO con JSON válido en una línea: {"kcal":number,"protein":number,"carbs":number,"fat":number}. Sin texto adicional.`;
+    const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+        'HTTP-Referer': publicBase() || 'https://kalory.app',
+        'X-Title': 'Kalory',
+      },
+      body: JSON.stringify({
+        model: 'openrouter/free',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 120,
+        temperature: 0.2,
+      }),
+    });
+    if (!r.ok) return res.status(502).json({ ok: false, error: 'ia_no_disponible' });
+    const d = await r.json();
+    const text = d.choices?.[0]?.message?.content || '';
+    const m = /\{.*\}/.exec(text);
+    if (!m) return res.status(502).json({ ok: false, error: 'ia_vacia' });
+    const j = JSON.parse(m[0]);
+    const food = {
+      kcal: Math.max(1, Math.round(+j.kcal || 0)),
+      protein: Math.max(0, +(+j.protein || 0).toFixed(1)),
+      carbs: Math.max(0, +(+j.carbs || 0).toFixed(1)),
+      fat: Math.max(0, +(+j.fat || 0).toFixed(1)),
+    };
+    res.json({ ok: true, food });
+  } catch (e) {
+    console.error('[food-estimate]', e.message);
+    res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
+
 app.post('/api/foods', auth, async (req, res) => {
   await ready();
   const b = req.body || {};

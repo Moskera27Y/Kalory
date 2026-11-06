@@ -6,7 +6,7 @@ import { useStore } from '../lib/store';
 import { getDb } from '../lib/db';
 import { isNative } from '../lib/steps';
 import { analyzeFood, downscale, pickPhoto, takePhoto, FOOD_ERRORS, type FoodEstimate } from '../lib/foodLens';
-import { buildWeekMenu, shoppingList } from '../lib/recipes';
+import { buildWeekMenu, shoppingList, RECIPES } from '../lib/recipes';
 import { MEALS } from '../lib/meals';
 
 /** Escáner con la cámara (solo móvil): detecta el código en vivo. */
@@ -175,7 +175,16 @@ export default function Nutrition() {
   const [favs, setFavs] = useState<{ name: string; kcal: number; protein: number; carbs: number; fat: number; n: number }[]>([]);
   const [repeatMsg, setRepeatMsg] = useState('');
   const [repeating, setRepeating] = useState(false);
+  const [estimating, setEstimating] = useState(false);
   const [addingCustom, setAddingCustom] = useState(false);
+  const estimateAI = async () => {
+    if (!custom.name.trim() || estimating) return;
+    setEstimating(true);
+    try {
+      const food = await getDb().estimateFood?.(custom.name.trim());
+      if (food) setCustom((c) => ({ ...c, kcal: String(food.kcal), p: String(food.protein), c: String(food.carbs), f: String(food.fat) }));
+    } finally { setEstimating(false); }
+  };
   const [catMsg, setCatMsg] = useState('');
   const [diaryMsg, setDiaryMsg] = useState('');
   const [addingFound, setAddingFound] = useState(false);
@@ -379,7 +388,10 @@ export default function Nutrition() {
               <input value={custom.c} onChange={(e) => setCustom({ ...custom, c: e.target.value })} type="number" min={0} className="input-kalory text-sm" placeholder="Carb g" />
               <input value={custom.f} onChange={(e) => setCustom({ ...custom, f: e.target.value })} type="number" min={0} className="input-kalory text-sm" placeholder="Grasa g" />
             </div>
-            <motion.button whileTap={{ scale: 0.97 }} onClick={addCustom} disabled={addingCustom} className="btn-emerald text-sm disabled:opacity-50">{addingCustom ? 'Guardando…' : `Registrar en ${meal}`}</motion.button>
+            <div className="flex gap-2">
+              <motion.button whileTap={{ scale: 0.97 }} onClick={estimateAI} disabled={estimating || !custom.name.trim()} className="btn-ghost text-sm disabled:opacity-50">{estimating ? 'Estimando…' : 'Estimar con IA'}</motion.button>
+              <motion.button whileTap={{ scale: 0.97 }} onClick={addCustom} disabled={addingCustom} className="btn-emerald text-sm disabled:opacity-50 flex-1">{addingCustom ? 'Guardando…' : `Registrar en ${meal}`}</motion.button>
+            </div>
             <p className="mt-2 text-[11px] text-muted">Solo necesitas nombre y calorías; los macros son opcionales.</p>
           </div>
 
@@ -490,34 +502,28 @@ function MenuSemanal() {
   const { profile, targets, logFood } = useStore();
   const [dayIdx, setDayIdx] = useState(0);
   const [added, setAdded] = useState('');
+  const [adding, setAdding] = useState<string | null>(null);
   const [addingWeek, setAddingWeek] = useState(false);
+  const [excluded, setExcluded] = useState('');
+  const [detail, setDetail] = useState<{ meal: string; recipe: (typeof RECIPES)[number] } | null>(null);
+  const excludedList = useMemo(() => excluded.split(',').map((s) => s.trim()).filter(Boolean), [excluded]);
   const menu = useMemo(
-    () => buildWeekMenu(profile?.diet ?? 'omnivoro', profile?.mealsPerDay ?? 4),
-    [profile?.diet, profile?.mealsPerDay],
+    () => buildWeekMenu(profile?.diet ?? 'omnivoro', profile?.mealsPerDay ?? 4, 0, excludedList),
+    [profile?.diet, profile?.mealsPerDay, excludedList],
   );
   const list = useMemo(() => shoppingList(menu), [menu]);
   const d = menu[dayIdx];
 
-  const addDay = async () => {
-    if (addingWeek) return;
-    setAddingWeek(true);
-    let copied = 0;
+  const addOne = async (meal: string, r: (typeof RECIPES)[number]) => {
+    if (adding) return;
+    setAdding(meal);
     try {
-      for (const it of d.items) {
-        await logFood({
-          name: it.recipe.name, kcal: it.recipe.kcal,
-          protein: it.recipe.p, carbs: it.recipe.c, fat: it.recipe.f,
-          meal: it.meal,
-        });
-        copied++;
-      }
-      setAdded(`Añadido el ${d.day} al diario de hoy.`);
+      await logFood({ name: r.name, kcal: r.kcal, protein: r.p, carbs: r.c, fat: r.f, meal });
+      setAdded(`Añadido ${r.name} (${meal}) al diario de hoy.`);
     } catch {
-      setAdded(copied > 0
-        ? `Se añadieron ${copied} de ${d.items.length} platos. Revisa tu conexión e inténtalo de nuevo.`
-        : 'No se pudo añadir. Revisa tu conexión.');
+      setAdded('No se pudo añadir. Revisa tu conexión.');
     } finally {
-      setAddingWeek(false);
+      setAdding(null);
       window.setTimeout(() => setAdded(''), 4000);
     }
   };
@@ -539,24 +545,50 @@ function MenuSemanal() {
         </div>
         <div className="mt-3 flex flex-col gap-1.5">
           {d.items.map((it, i) => (
-            <div key={i} className="rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2.5">
+            <button key={i} onClick={() => setDetail(it)}
+              className="rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2.5 text-left hover:border-emerald/40">
               <div className="flex justify-between text-xs">
                 <b>{it.recipe.name}</b>
                 <b className="tabular-nums ml-2">{it.recipe.kcal} kcal</b>
               </div>
               <p className="mt-0.5 text-[11px] text-muted">{it.meal} · P {it.recipe.p}g · C {it.recipe.c}g · G {it.recipe.f}g</p>
               <p className="text-[11px] text-muted/70 truncate">{it.recipe.ingredients.join(' · ')}</p>
-            </div>
+            </button>
           ))}
         </div>
-        <div className="mt-3 flex items-center gap-2">
-          <motion.button whileTap={{ scale: 0.97 }} onClick={addDay} disabled={addingWeek} className="btn-emerald !py-2.5 text-sm flex-1 disabled:opacity-50">
-            {addingWeek ? 'Añadiendo…' : `Añadir ${d.day} al diario de hoy (${d.kcal} kcal)`}
+        <div className="mt-3">
+          <motion.button whileTap={{ scale: 0.97 }} onClick={() => { setAddingWeek(true); (async () => {
+            let copied = 0;
+            try {
+              for (const it of d.items) { await logFood({ name: it.recipe.name, kcal: it.recipe.kcal, protein: it.recipe.p, carbs: it.recipe.c, fat: it.recipe.f, meal: it.meal }); copied++; }
+              setAdded(`Añadido el ${d.day} al diario de hoy.`);
+            } catch { setAdded(copied > 0 ? `Se añadieron ${copied} de ${d.items.length} platos.` : 'No se pudo añadir.'); }
+            finally { setAddingWeek(false); window.setTimeout(() => setAdded(''), 4000); }
+          })(); }} disabled={addingWeek} className="btn-emerald !py-2.5 text-sm w-full disabled:opacity-50">
+            {addingWeek ? 'Añadiendo…' : `Añadir ${d.day} completo al diario (${d.kcal} kcal)`}
           </motion.button>
         </div>
         {added && <p className="mt-2 text-xs text-emerald">{added}</p>}
         {targets && <p className="mt-2 text-[11px] text-muted">Tu meta: {targets.calories} kcal · P {targets.protein}g · C {targets.carbs}g · G {targets.fat}g</p>}
       </GlassCard>
+
+      {detail && (
+        <GlassCard glow>
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-bold">{detail.recipe.name}</p>
+            <button onClick={() => setDetail(null)} className="text-muted hover:text-white"><X size={16} /></button>
+          </div>
+          <p className="mt-1 text-[11px] text-muted">{detail.meal} · {detail.recipe.kcal} kcal · P {detail.recipe.p}g · C {detail.recipe.c}g · G {detail.recipe.f}g</p>
+          <p className="mt-2 text-xs font-semibold text-muted">Ingredientes:</p>
+          <p className="text-[11px] text-muted/80">{detail.recipe.ingredients.join(' · ')}</p>
+          <p className="mt-2 text-xs font-semibold text-muted">Preparación:</p>
+          <p className="text-[11px] text-muted/80">{detail.recipe.prep || 'Preparar y servir.'}</p>
+          <motion.button whileTap={{ scale: 0.97 }} onClick={() => addOne(detail.meal, detail.recipe)} disabled={!!adding}
+            className="btn-emerald !py-2.5 text-sm w-full mt-3 disabled:opacity-50">
+            {adding === detail.meal ? 'Añadiendo…' : `Añadir ${detail.meal} del día`}
+          </motion.button>
+        </GlassCard>
+      )}
 
       <GlassCard>
         <div className="flex items-center gap-2">
@@ -564,12 +596,18 @@ function MenuSemanal() {
           <p className="text-sm font-bold">Lista de compras semanal</p>
         </div>
         <div className="mt-2 flex flex-wrap gap-1.5">
-          {list.slice(0, 30).map((l) => (
+          {list.slice(0, 40).map((l) => (
             <span key={l.item} className="rounded-lg bg-white/5 border border-white/10 px-2.5 py-1.5 text-[11px]">
               {l.item} {l.n > 1 && <b className="text-emerald">×{l.n}</b>}
             </span>
           ))}
         </div>
+      </GlassCard>
+
+      <GlassCard>
+        <p className="text-xs uppercase tracking-widest text-muted mb-2">Excluir alimentos (separados por coma)</p>
+        <input value={excluded} onChange={(e) => setExcluded(e.target.value)} className="input-kalory text-sm" placeholder="Ej: atún, queso, lentejas" />
+        <p className="mt-1 text-[11px] text-muted">El menú se regenera automáticamente excluyendo esos alimentos.</p>
       </GlassCard>
 
       <GlassCard>

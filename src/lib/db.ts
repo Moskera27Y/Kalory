@@ -15,6 +15,7 @@ export interface DbApi {
   setGoogleClientId: (clientId: string) => Promise<boolean>;
   saveProfile: (p: { profile: UserProfile; targets: MacroTargets }) => Promise<boolean>;
   logFood: (f: { date: string; name: string; kcal: number; protein?: number; carbs?: number; fat?: number; meal?: string }) => Promise<number>;
+  estimateFood?: (name: string) => Promise<{ kcal: number; protein: number; carbs: number; fat: number } | null>;
   deleteFood: (id: number) => Promise<boolean>;
   getDay: (date: string) => Promise<DayData>;
   logWater: (w: { date: string; ml: number }) => Promise<number>;

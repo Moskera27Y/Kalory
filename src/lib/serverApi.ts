@@ -244,6 +244,14 @@ export class ServerDb implements DbApi {
     }
   }
 
+  async estimateFood(name: string): Promise<{ kcal: number; protein: number; carbs: number; fat: number } | null> {
+    try {
+      const token = loadToken();
+      const r = await req<{ ok: boolean; food?: { kcal: number; protein: number; carbs: number; fat: number } }>(this.url, token, '/api/food/estimate', 'POST', { name });
+      return r.food ?? null;
+    } catch { return null; }
+  }
+
   async deleteFood(id: number) {
     const uid = this.uid;
     try {
@@ -251,7 +259,6 @@ export class ServerDb implements DbApi {
     } catch (e) {
       if (uid && isOfflineError(e)) {
         enqueue(uid, { kind: 'deleteFood', payload: { id } });
-        // Reflejo inmediato en la sombra de hoy para que no "reviva" sin conexión
         applyDeleteFood(uid, todayStr(), id);
         return true;
       }
