@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Search, Plus, Trash2, ScanBarcode, Loader2, History, Star, BookOpen, ShoppingCart, CalendarDays, Camera, X } from 'lucide-react';
+import { Search, Plus, Trash2, ScanBarcode, Loader2, History, Star, BookOpen, ShoppingCart, CalendarDays, Camera, X, Sparkles } from 'lucide-react';
 import { GlassCard } from '../components/ui';
 import { useStore } from '../lib/store';
 import { getDb } from '../lib/db';
@@ -389,7 +389,9 @@ export default function Nutrition() {
               <input value={custom.f} onChange={(e) => setCustom({ ...custom, f: e.target.value })} type="number" min={0} className="input-kalory text-sm" placeholder="Grasa g" />
             </div>
             <div className="flex gap-2">
-              <motion.button whileTap={{ scale: 0.97 }} onClick={estimateAI} disabled={estimating || !custom.name.trim()} className="btn-ghost text-sm disabled:opacity-50">{estimating ? 'Estimando…' : 'Estimar con IA'}</motion.button>
+              <motion.button whileTap={{ scale: 0.97 }} onClick={estimateAI} disabled={estimating || !custom.name.trim()} className="btn-ghost text-sm disabled:opacity-50">
+                {estimating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+              </motion.button>
               <motion.button whileTap={{ scale: 0.97 }} onClick={addCustom} disabled={addingCustom} className="btn-emerald text-sm disabled:opacity-50 flex-1">{addingCustom ? 'Guardando…' : `Registrar en ${meal}`}</motion.button>
             </div>
             <p className="mt-2 text-[11px] text-muted">Solo necesitas nombre y calorías; los macros son opcionales.</p>
@@ -591,9 +593,19 @@ function MenuSemanal() {
       )}
 
       <GlassCard>
-        <div className="flex items-center gap-2">
-          <ShoppingCart size={17} className="text-emerald" />
-          <p className="text-sm font-bold">Lista de compras semanal</p>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <ShoppingCart size={17} className="text-emerald" />
+            <p className="text-sm font-bold">Lista de compras semanal</p>
+          </div>
+          <motion.button whileTap={{ scale: 0.97 }} onClick={() => {
+            const text = list.map((l) => `[ ] ${l.item}${l.n > 1 ? ` (x${l.n})` : ''}`).join('\\n');
+            const blob = new Blob([text], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = 'lista-compras-kalory.txt'; a.click();
+            URL.revokeObjectURL(url);
+          }} className="btn-ghost !py-1.5 text-xs">Exportar</motion.button>
         </div>
         <div className="mt-2 flex flex-wrap gap-1.5">
           {list.slice(0, 40).map((l) => (
