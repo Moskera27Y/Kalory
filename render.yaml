@@ -22,6 +22,6 @@ services:
       - key: GOOGLE_CLIENT_ID
         value: 60146882018-1ad06p3sgqlo46ka8s2msm50r2m2durd.apps.googleusercontent.com
       - key: GOOGLE_WEB_CLIENT_ID
-        value: 60146882018-00sslbouh76ssegs3j7saoot13a6j1ee.apps.googleusercontent.com
+        value: 432585530321-pk7t5smbmlcn77vka8dm3kf0r1vs45i5.apps.googleusercontent.com
       - key: GOOGLE_WEB_CLIENT_SECRET
         sync: false
