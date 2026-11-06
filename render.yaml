@@ -6,17 +6,13 @@ services:
     dockerContext: ./Base de Datos
     plan: free
     healthCheckPath: /api/health
-    disk:
-      name: kalory-data
-      mountPath: /data
-      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 3001
       - key: DATA_FILE
-        value: /data/kalory-online.db
+        value: /tmp/kalory-online.db
       - key: JWT_SECRET
         sync: false
       - key: ADMIN_TOKEN
