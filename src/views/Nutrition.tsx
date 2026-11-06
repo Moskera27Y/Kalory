@@ -52,14 +52,14 @@ function BarcodeScanner({ onCode, onClose }: { onCode: (c: string) => void; onCl
 }
 
 const CATALOG = [
-  { name: 'Pechuga de pollo 150g', kcal: 248, p: 46, c: 0, f: 5 },
-  { name: 'Arroz integral 1 taza', kcal: 216, p: 5, c: 45, f: 1.8 },
-  { name: 'Aguacate ½ unidad', kcal: 160, p: 2, c: 9, f: 15 },
-  { name: 'Avena 60g + plátano', kcal: 320, p: 9, c: 62, f: 5 },
-  { name: 'Salmón 150g', kcal: 310, p: 34, c: 0, f: 18 },
-  { name: 'Yogur griego 200g + miel', kcal: 220, p: 20, c: 22, f: 5 },
-  { name: 'Huevo cocido 2 uds', kcal: 155, p: 13, c: 1, f: 11 },
-  { name: 'Ensalada verde grande', kcal: 120, p: 4, c: 12, f: 7 },
+  { name: 'Pechuga de pollo 150g', kcal: 248, p: 46, c: 0, f: 5, meal: 'Almuerzo' },
+  { name: 'Arroz integral 1 taza', kcal: 216, p: 5, c: 45, f: 1.8, meal: 'Almuerzo' },
+  { name: 'Aguacate ½ unidad', kcal: 160, p: 2, c: 9, f: 15, meal: 'Snack' },
+  { name: 'Avena 60g + plátano', kcal: 320, p: 9, c: 62, f: 5, meal: 'Desayuno' },
+  { name: 'Salmón 150g', kcal: 310, p: 34, c: 0, f: 18, meal: 'Almuerzo' },
+  { name: 'Yogur griego 200g + miel', kcal: 220, p: 20, c: 22, f: 5, meal: 'Snack' },
+  { name: 'Huevo cocido 2 uds', kcal: 155, p: 13, c: 1, f: 11, meal: 'Desayuno' },
+  { name: 'Ensalada verde grande', kcal: 120, p: 4, c: 12, f: 7, meal: 'Almuerzo' },
 ];
 
 
@@ -170,12 +170,14 @@ export default function Nutrition() {
   const [unitWeight, setUnitWeight] = useState('');
   const [looking, setLooking] = useState(false);
   const [found, setFound] = useState<null | { name: string; kcal100: number; p100: number; c100: number; f100: number }>(null);
+  const [manualName, setManualName] = useState('');
   const [codeError, setCodeError] = useState('');
   const [scanning, setScanning] = useState(false);
   const [favs, setFavs] = useState<{ name: string; kcal: number; protein: number; carbs: number; fat: number; n: number }[]>([]);
   const [repeatMsg, setRepeatMsg] = useState('');
   const [repeating, setRepeating] = useState(false);
   const [estimating, setEstimating] = useState(false);
+  const [confirmData, setConfirmData] = useState<{ name: string; kcal: number; p: number; c: number; f: number } | null>(null);
   const [addingCustom, setAddingCustom] = useState(false);
   const estimateAI = async () => {
     if (!custom.name.trim() || estimating) return;
@@ -243,25 +245,33 @@ export default function Nutrition() {
     }
   };
 
-  const results = CATALOG.filter((f) => f.name.toLowerCase().includes(q.toLowerCase()));
+  const results = CATALOG.filter((f) => (f as { meal?: string }).meal === 'Snack' && f.name.toLowerCase().includes(q.toLowerCase()));
 
   const addCustom = async () => {
     if (addingCustom) return;
     const kcal = Number(custom.kcal);
-    if (!custom.name.trim() || !Number.isFinite(kcal) || kcal <= 0) return;
+    if (!custom.name.trim()) return;
+    if (!Number.isFinite(kcal) || kcal <= 0) {
+      setEstimating(true);
+      try {
+        const food = await getDb().estimateFood?.(custom.name.trim());
+        if (food) setConfirmData({ name: custom.name.trim(), kcal: food.kcal, p: food.protein, c: food.carbs, f: food.fat });
+        else setCatMsg('No se pudo estimar. Ingresa las calorías manualmente.');
+      } finally { setEstimating(false); }
+      return;
+    }
+    setConfirmData({ name: custom.name.trim(), kcal: Math.round(kcal), p: Number(custom.p) || 0, c: Number(custom.c) || 0, f: Number(custom.f) || 0 });
+  };
+
+  const confirmAdd = async () => {
+    if (!confirmData || addingCustom) return;
     setAddingCustom(true);
     try {
-      await logFood({
-        name: custom.name.trim(), kcal: Math.round(kcal),
-        protein: Number(custom.p) || 0, carbs: Number(custom.c) || 0, fat: Number(custom.f) || 0,
-        meal,
-      });
+      await logFood({ name: confirmData.name, kcal: confirmData.kcal, protein: confirmData.p, carbs: confirmData.c, fat: confirmData.f, meal });
       setCustom({ name: '', kcal: '', p: '', c: '', f: '' });
-    } catch {
-      setCatMsg('No se pudo guardar. Revisa tu conexión.');
-    } finally {
-      setAddingCustom(false);
-    }
+      setConfirmData(null);
+    } catch { setCatMsg('No se pudo guardar. Revisa tu conexión.'); }
+    finally { setAddingCustom(false); }
   };
 
   const grouped = MEALS.map((m) => ({ meal: m, items: day.foods.filter((f) => f.meal === m) })).filter((g) => g.items.length > 0);
@@ -377,6 +387,23 @@ export default function Nutrition() {
         </GlassCard>
       )}
 
+      {confirmData && (
+        <GlassCard glow>
+          <p className="text-sm font-bold">Confirmar registro</p>
+          <p className="mt-1 text-xs text-muted">{confirmData.name}</p>
+          <div className="mt-2 grid grid-cols-4 gap-2 text-center">
+            <div className="rounded-lg bg-white/5 p-2"><p className="text-[10px] text-muted">Kcal</p><p className="font-bold">{confirmData.kcal}</p></div>
+            <div className="rounded-lg bg-white/5 p-2"><p className="text-[10px] text-muted">Prot</p><p className="font-bold">{confirmData.p}g</p></div>
+            <div className="rounded-lg bg-white/5 p-2"><p className="text-[10px] text-muted">Carb</p><p className="font-bold">{confirmData.c}g</p></div>
+            <div className="rounded-lg bg-white/5 p-2"><p className="text-[10px] text-muted">Grasa</p><p className="font-bold">{confirmData.f}g</p></div>
+          </div>
+          <div className="mt-3 flex gap-2">
+            <motion.button whileTap={{ scale: 0.97 }} onClick={() => setConfirmData(null)} className="btn-ghost text-sm flex-1">Cancelar</motion.button>
+            <motion.button whileTap={{ scale: 0.97 }} onClick={confirmAdd} disabled={addingCustom} className="btn-emerald text-sm flex-1 disabled:opacity-50">{addingCustom ? 'Guardando…' : 'Confirmar y añadir'}</motion.button>
+          </div>
+        </GlassCard>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-2">
         <GlassCard glow>
           <p className="text-xs uppercase tracking-widest text-muted">Añadir comida personalizada · {meal}</p>
@@ -419,6 +446,16 @@ export default function Nutrition() {
             </motion.button>
           </div>
           {codeError && <p className="mt-2 text-xs text-fire">{codeError}</p>}
+          {codeError && (
+            <div className="mt-2 flex gap-2">
+              <input value={manualName} onChange={(e) => setManualName(e.target.value)} className="input-kalory !py-2 text-sm flex-1" placeholder="Nombre del producto (manual)" />
+              <motion.button whileTap={{ scale: 0.97 }} onClick={() => {
+                if (!manualName.trim()) return;
+                setCustom({ name: manualName.trim(), kcal: '', p: '', c: '', f: '' });
+                setView('diario');
+              }} className="btn-emerald !py-2 text-sm whitespace-nowrap">Usar</motion.button>
+            </div>
+          )}
           {found && (
             <div className="mt-2 rounded-xl border border-emerald/30 bg-emerald/10 p-3">
               <p className="text-xs font-bold">{found.name}</p>
