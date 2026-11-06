@@ -11,6 +11,8 @@ services:
         value: production
       - key: PORT
         value: 3001
+      - key: PUBLIC_URL
+        value: https://kalory-api.onrender.com
       - key: DATA_FILE
         value: /tmp/kalory-online.db
       - key: JWT_SECRET

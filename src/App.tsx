@@ -126,7 +126,7 @@ function AnimatedRoutes() {
       <Sidebar />
       <VersionBanner />
       <MedalToast />
-      <main className="relative min-h-0 flex-1 overflow-y-auto touch-pan-y p-4 md:p-6 pb-48 md:pb-6">
+      <main className="relative min-h-0 flex-1 overflow-y-auto touch-pan-y p-4 md:p-6 pb-48 md:pb-6" style={{ overscrollBehaviorY: 'contain' }}>
         {offline && <OfflineBanner />}
         <AnimatePresence mode="wait">
           <Routes location={location} key={location.pathname}>
@@ -173,7 +173,7 @@ function Shell() {
     return () => clearTimeout(t);
   }, []);
   return (
-    <div className="app-bg h-screen h-[100dvh] w-screen overflow-hidden text-mist">
+    <div className="app-bg h-screen h-[100dvh] w-screen overflow-auto text-mist">
       <AmbientCanvas />
       <div className="noise" aria-hidden />
       <div className="relative z-10 h-full">
