@@ -1,0 +1,52 @@
+name: Android (APK debug)
+
+# Compila el APK en GitHub Actions sin necesidad de Android Studio local.
+# Uso: pestaña Actions → "Android (APK debug)" → Run workflow → descarga
+# el artefacto "Kalory-debug-apk".
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Código
+        uses: actions/checkout@v4
+
+      - name: Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Dependencias web
+        run: npm ci
+
+      - name: Compilar web
+        run: npm run build
+
+      - name: Dependencias Mobil
+        working-directory: Mobil
+        run: npm ci
+
+      - name: Sincronizar Android
+        working-directory: Mobil
+        run: npx cap sync android
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Compilar APK debug
+        working-directory: Mobil/android
+        run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+
+      - name: Subir artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kalory-debug-apk
+          path: Mobil/android/app/build/outputs/apk/debug/*.apk
+          retention-days: 14
