@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   UserCheck, ClipboardList, UtensilsCrossed, Droplet, Dumbbell,
@@ -9,6 +9,7 @@ import { GlassCard } from '../components/ui';
 import { MEDALS } from '../lib/achievements';
 import { calcBMR } from '../lib/calculations';
 import { loadPrefs, savePrefs, type NotifyPrefs } from '../lib/reminders';
+import { isNative } from '../lib/steps';
 import { downloadFile, weeklyCSV, APP_VERSION } from '../lib/report';
 import { daysAgo, getDb, todayStr } from '../lib/db';
 import { useStore } from '../lib/store';
@@ -57,7 +58,8 @@ export default function Profile() {
   const [showImc, setShowImc] = useState(false);
   if (!profile || !targets) return null;
 
-  const bmi = profile.weightKg / Math.pow(profile.heightCm / 100, 2);
+  const bmiRaw = profile.weightKg / Math.pow(profile.heightCm / 100, 2);
+  const bmi = Number.isFinite(bmiRaw) && bmiRaw > 0 ? bmiRaw : 0;
   const bmr = Math.round(calcBMR(profile));
   const diff = profile.targetWeightKg - profile.weightKg;
 
@@ -114,8 +116,8 @@ export default function Profile() {
             <div className="mt-3 grid grid-cols-2 gap-2">
               <button onClick={() => setShowImc(true)} title="Ver detalle" className="rounded-xl bg-white/[0.04] border border-white/5 p-4 text-center hover:border-emerald/40 transition-all">
                 <p className="text-[11px] text-muted">IMC ⓘ</p>
-                <p className="font-display text-2xl font-extrabold">{bmi.toFixed(1)}</p>
-                <p className="text-[11px] text-emerald">{bmiCategory(bmi)}</p>
+                <p className="font-display text-2xl font-extrabold">{bmi > 0 ? bmi.toFixed(1) : '—'}</p>
+                <p className="text-[11px] text-emerald">{bmi > 0 ? bmiCategory(bmi) : '—'}</p>
               </button>
               <div className="rounded-xl bg-white/[0.04] border border-white/5 p-4 text-center">
                 <p className="text-[11px] text-muted">Metabolismo basal</p>
@@ -149,10 +151,17 @@ export default function Profile() {
               ] as const).map(([k, label, timeKey]) => (
                 <div key={k} className="flex items-center gap-2 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2">
                   <button
+                    role="switch"
+                    aria-checked={prefs[k]}
+                    aria-label={label}
                     onClick={() => {
                       const next = { ...prefs, [k]: !prefs[k] };
                       setPrefs(next);
                       savePrefs(next);
+                      // Pedir permiso SOLO cuando el usuario activa un aviso (gesto explícito)
+                      if (next[k] && !isNative() && 'Notification' in window && Notification.permission === 'default') {
+                        Notification.requestPermission().catch(() => undefined);
+                      }
                     }}
                     className="flex flex-1 items-center gap-3 text-sm"
                   >
@@ -293,7 +302,7 @@ export default function Profile() {
         </div>
       </div>
 
-      {showImc && <ImcModal bmi={bmi} onClose={() => setShowImc(false)} />}
+      {showImc && bmi > 0 && <ImcModal bmi={bmi} onClose={() => setShowImc(false)} />}
     </div>
   );
 }
@@ -309,9 +318,14 @@ const IMC_ROWS: { max: number; name: string; color: string; risks: string; tip: 
 
 function ImcModal({ bmi, onClose }: { bmi: number; onClose: () => void }) {
   const active = IMC_ROWS.findIndex((r) => bmi < r.max);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="glass-strong w-full max-w-md p-6 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div role="dialog" aria-modal="true" aria-label="Tu IMC" className="glass-strong w-full max-w-md p-6 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3">
           <div>
             <p className="text-xs uppercase tracking-widest text-muted">Tu IMC</p>
@@ -320,7 +334,7 @@ function ImcModal({ bmi, onClose }: { bmi: number; onClose: () => void }) {
           <span className={`ml-auto rounded-full px-3 py-1 text-xs font-bold border border-white/10 bg-white/5 ${IMC_ROWS[active].color}`}>
             {IMC_ROWS[active].name}
           </span>
-          <button onClick={onClose} className="chip !px-3 !py-1.5 text-muted">✕</button>
+          <button onClick={onClose} autoFocus aria-label="Cerrar" className="chip !px-3 !py-1.5 text-muted">✕</button>
         </div>
         <div className="mt-4 flex flex-col gap-2">
           {IMC_ROWS.map((r, i) => (

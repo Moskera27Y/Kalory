@@ -36,8 +36,14 @@ const SPLIT_DAY: Exercise[] = [
 
 const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 const setsCount = (s: string) => {
-  const m = s.match(/(\d+)/);
-  return m ? Math.min(8, Math.max(1, Number(m[1]))) : 3;
+  const clamp = (n: number) => Math.min(8, Math.max(1, n));
+  // Multiplicador antes de la × (p. ej. "3 × 8-10" → 3). Sin × es un ejercicio
+  // por tiempo ("15 min"): cuenta como 1 serie, no como 15.
+  const m = s.match(/(\d+)\s*[×xX*]/);
+  if (m) return clamp(Number(m[1]));
+  if (/min/i.test(s)) return 1;
+  const m2 = s.match(/(\d+)/);
+  return m2 ? clamp(Number(m2[1])) : 3;
 };
 
 function fmt(sec: number) {
@@ -56,7 +62,9 @@ function RestTimer() {
         setSec((s) => {
           if (s <= 1) {
             setRun(false);
-            return 90;
+            beep(660, 500); // avisa de que el descanso terminó
+            if (navigator.vibrate) navigator.vibrate(200);
+            return 0;
           }
           return s - 1;
         });
@@ -68,10 +76,14 @@ function RestTimer() {
   return (
     <div>
       <div className="flex items-center gap-3 rounded-xl bg-white/5 border border-white/10 px-4 py-3">
-        <span className="font-display text-2xl font-extrabold tabular-nums">{fmt(sec)}</span>
+        {sec === 0 ? (
+          <span className="font-display text-2xl font-extrabold text-emerald">¡Descanso terminado!</span>
+        ) : (
+          <span className="font-display text-2xl font-extrabold tabular-nums">{fmt(sec)}</span>
+        )}
         <div className="ml-auto flex gap-2">
-          <button onClick={() => setRun(!run)} className="chip !px-3">{run ? <Pause size={15} /> : <Play size={15} />}</button>
-          <button onClick={() => { setRun(false); setSec(90); }} className="chip !px-3"><RotateCcw size={15} /></button>
+          <button onClick={() => setRun(!run)} disabled={sec === 0} aria-label={run ? 'Pausar descanso' : 'Empezar descanso'} className="chip !px-3 disabled:opacity-40">{run ? <Pause size={15} /> : <Play size={15} />}</button>
+          <button onClick={() => { setRun(false); setSec(90); }} aria-label="Reiniciar descanso a 90 segundos" className="chip !px-3"><RotateCcw size={15} /></button>
         </div>
       </div>
       <div className="mt-3 flex gap-2">
@@ -119,11 +131,19 @@ function SessionPlayer({ exercises, onDone, onClose }: { exercises: Exercise[]; 
     }
   };
 
+  useEffect(() => {
+    if (summary) return; // en el resumen no se cierra con Escape: hay que guardar
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [summary, onClose]);
+
   const e = exercises[exIdx];
   if (summary) {
     const mins = Math.max(1, Math.round((Date.now() - startRef.current) / 60000));
     return (
-      <motion.div className="fixed inset-0 z-50 flex items-center justify-center bg-[#070B16]/95 backdrop-blur-md p-4"
+      <motion.div role="dialog" aria-modal="true" aria-label="Sesión completa"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-[#070B16]/95 backdrop-blur-md p-4"
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
         <motion.div className="glass card-glow-emerald w-full max-w-md p-8 text-center relative overflow-hidden"
           initial={{ scale: 0.85, y: 30 }} animate={{ scale: 1, y: 0 }} transition={{ type: 'spring', stiffness: 200, damping: 20 }}>
@@ -166,10 +186,11 @@ function SessionPlayer({ exercises, onDone, onClose }: { exercises: Exercise[]; 
     );
   }
   return (
-    <motion.div className="fixed inset-0 z-50 flex items-center justify-center bg-[#070B16]/95 backdrop-blur-md p-4"
+    <motion.div role="dialog" aria-modal="true" aria-label={`Ejercicio ${exIdx + 1} de ${exercises.length}`}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#070B16]/95 backdrop-blur-md p-4"
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <div className="glass w-full max-w-lg p-8 text-center relative">
-        <button onClick={onClose} className="absolute right-4 top-4 text-muted hover:text-white"><X size={20} /></button>
+        <button onClick={onClose} autoFocus aria-label="Cerrar sesión" className="absolute right-4 top-4 text-muted hover:text-white"><X size={20} /></button>
         <p className="text-xs uppercase tracking-widest text-muted">Ejercicio {exIdx + 1} de {exercises.length}</p>
         <h2 className="mt-2 font-display text-3xl font-extrabold">{e.name}</h2>
         <p className="mt-1 text-sm text-fire font-bold">{e.sets} · Serie {setNum + 1} de {totalSets}</p>
@@ -201,21 +222,31 @@ function SessionPlayer({ exercises, onDone, onClose }: { exercises: Exercise[]; 
   );
 }
 
+/** Pitido compartido: un único AudioContext (varios contexts seguidos bloquean el audio en Chrome). */
+let actx: AudioContext | null = null;
 function beep(freq = 880, ms = 180) {
   try {
-    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    const ctx = new Ctx();
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.connect(g); g.connect(ctx.destination);
+    const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!actx || actx.state === 'closed') actx = new Ctor();
+    if (actx.state === 'suspended') void actx.resume();
+    const o = actx.createOscillator();
+    const g = actx.createGain();
+    o.connect(g); g.connect(actx.destination);
     o.frequency.value = freq;
     o.start();
-    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + ms / 1000);
-    o.stop(ctx.currentTime + ms / 1000);
+    g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + ms / 1000);
+    o.stop(actx.currentTime + ms / 1000);
   } catch { /* sin audio */ }
 }
 
 /** Temporizador HIIT por intervalos. */
+/** Limita a un entero dentro de [min, max]; si el valor no es número, usa el fallback. */
+const clampNum = (v: string, min: number, max: number, fallback: number) => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(n)));
+};
+
 function HiitTimer() {
   const [rounds, setRounds] = useState(8);
   const [work, setWork] = useState(30);
@@ -252,9 +283,9 @@ function HiitTimer() {
         <div className="mt-3 grid gap-2">
           {phase === 'done' && <p className="rounded-xl border border-emerald/40 bg-emerald/10 p-3 text-center text-sm font-bold text-emerald">¡Completado! 🔥</p>}
           <div className="grid grid-cols-3 gap-2 text-sm">
-            <label className="grid gap-1 text-xs text-muted">Rondas<input type="number" min={1} max={30} value={rounds} onChange={(e) => setRounds(Number(e.target.value))} className="input-kalory !py-2 text-sm" /></label>
-            <label className="grid gap-1 text-xs text-muted">Trabajo (s)<input type="number" min={5} max={300} value={work} onChange={(e) => setWork(Number(e.target.value))} className="input-kalory !py-2 text-sm" /></label>
-            <label className="grid gap-1 text-xs text-muted">Descanso (s)<input type="number" min={5} max={300} value={rest} onChange={(e) => setRest(Number(e.target.value))} className="input-kalory !py-2 text-sm" /></label>
+            <label className="grid gap-1 text-xs text-muted">Rondas<input type="number" min={1} max={30} value={rounds} onChange={(e) => setRounds(clampNum(e.target.value, 1, 30, 8))} className="input-kalory !py-2 text-sm" /></label>
+            <label className="grid gap-1 text-xs text-muted">Trabajo (s)<input type="number" min={5} max={300} value={work} onChange={(e) => setWork(clampNum(e.target.value, 5, 300, 30))} className="input-kalory !py-2 text-sm" /></label>
+            <label className="grid gap-1 text-xs text-muted">Descanso (s)<input type="number" min={5} max={300} value={rest} onChange={(e) => setRest(clampNum(e.target.value, 5, 300, 15))} className="input-kalory !py-2 text-sm" /></label>
           </div>
           <motion.button whileTap={{ scale: 0.97 }} onClick={start} className="btn-fire text-sm flex items-center justify-center gap-2"><Play size={16} /> Empezar HIIT</motion.button>
         </div>

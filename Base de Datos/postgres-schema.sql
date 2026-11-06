@@ -1,6 +1,8 @@
 -- Kalory · Esquema PostgreSQL (cuando se supere la capacidad del archivo SQLite)
 -- Migración: exportar cada tabla de SQLite e importar aquí (mismos nombres/columnas).
 
+CREATE EXTENSION IF NOT EXISTS citext;
+
 CREATE TABLE IF NOT EXISTS users(
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
@@ -9,8 +11,10 @@ CREATE TABLE IF NOT EXISTS users(
   pwd_salt TEXT,
   google_sub TEXT UNIQUE,
   provider TEXT NOT NULL DEFAULT 'local',
+  invite_code TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite_code ON users(invite_code);
 
 CREATE TABLE IF NOT EXISTS user_profile(
   user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -70,3 +74,4 @@ CREATE TABLE IF NOT EXISTS friendships(
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY(user_id, friend_id)
 );
+CREATE INDEX IF NOT EXISTS idx_friendships_friend ON friendships(friend_id);

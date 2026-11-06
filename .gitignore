@@ -23,6 +23,9 @@ Thumbs.db
 
 # Mobil / Android (generados locales)
 Mobil/tools/
+Mobil/*.apk
+Mobil/*.aab
+Mobil/ios/*.ipa
 Mobil/android/.gradle/
 Mobil/android/app/build/
 Mobil/android/app/release/

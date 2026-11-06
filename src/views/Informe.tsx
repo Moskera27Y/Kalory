@@ -12,7 +12,8 @@ export default function Informe() {
   const week = history.filter((d) => d.date >= from && d.date <= to);
   const sum = (f: (d: (typeof week)[number]) => number) => week.reduce((a, d) => a + f(d), 0);
   const totKcal = Math.round(sum((d) => d.kcal));
-  const avgKcal = week.length ? Math.round(totKcal / week.length) : 0;
+  const kcalDays = week.filter((d) => d.kcal > 0);
+  const avgKcal = kcalDays.length ? Math.round(totKcal / kcalDays.length) : 0;
   const waters = week.filter((d) => targets && d.waterMl >= targets.waterMl).length;
   const trainDays = week.filter((d) => d.exercises > 0).length;
   const weights = week.map((d) => d.weight).filter((w): w is number => w != null);

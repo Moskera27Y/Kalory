@@ -14,7 +14,7 @@ const links = [
 ];
 
 export default function Sidebar() {
-  const { user, logout, resetAll, syncPending, refreshSync } = useStore();
+  const { user, logout, resetAll, syncPending, refreshSync, serverUrl, offline } = useStore();
   return (
     <aside className="hidden md:flex w-[248px] shrink-0 flex-col gap-2 p-5 glass-strong m-4 mr-0">
       <div className="px-2 py-2"><Logo size={38} /></div>
@@ -62,6 +62,14 @@ export default function Sidebar() {
             <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-fire opacity-60" /><span className="relative inline-flex rounded-full h-2 w-2 bg-fire" /></span>
             Pendiente ({syncPending})
           </button>
+        ) : !serverUrl ? (
+          <p className="flex items-center gap-3 rounded-xl px-4 py-2 text-xs text-muted" title="Los datos se guardan solo en este equipo; no hay sincronización">
+            <span className="h-2 w-2 rounded-full bg-slate-500" /> Modo local
+          </p>
+        ) : offline ? (
+          <p className="flex items-center gap-3 rounded-xl px-4 py-2.5 text-xs text-fire" title="Sin conexión: estás viendo la última copia guardada en este equipo">
+            <span className="h-2 w-2 rounded-full bg-fire" /> Sin conexión
+          </p>
         ) : (
           <p className="flex items-center gap-3 rounded-xl px-4 py-2 text-xs text-muted">
             <span className="h-2 w-2 rounded-full bg-emerald" /> Sincronizado
@@ -74,7 +82,10 @@ export default function Sidebar() {
           <LogOut size={18} /> Cerrar sesión
         </button>
         <button
-          onClick={() => { if (window.confirm('¿Borrar todos tus datos y empezar de cero? (Tu cuenta se mantiene)')) resetAll(); }}
+          onClick={() => {
+            if (!window.confirm('¿Borrar todos tus datos y empezar de cero? (Tu cuenta se mantiene)')) return;
+            resetAll().catch(() => window.alert('No se pudieron borrar los datos. Revisa tu conexión e inténtalo de nuevo.'));
+          }}
           className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm text-muted hover:text-fire-hot hover:bg-fire-hot/10 transition-all"
         >
           <Trash2 size={18} /> Borrar datos

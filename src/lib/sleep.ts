@@ -25,6 +25,8 @@ export function listSleep(userId: number): SleepEntry[] {
 function diffHours(bed: string, wake: string): number {
   const [bh, bm] = bed.split(':').map(Number);
   const [wh, wm] = wake.split(':').map(Number);
+  if (![bh, bm, wh, wm].every(Number.isFinite)) throw new Error('hora_invalida');
+  if (bed === wake) throw new Error('hora_igual'); // 00:00→00:00 no son 24 h: es un error de entrada
   let h = wh + wm / 60 - (bh + bm / 60);
   if (h <= 0) h += 24;
   return Math.round(h * 10) / 10;

@@ -7,6 +7,7 @@ import { getDb } from '../lib/db';
 import { isNative } from '../lib/steps';
 import { analyzeFood, downscale, pickPhoto, takePhoto, FOOD_ERRORS, type FoodEstimate } from '../lib/foodLens';
 import { buildWeekMenu, shoppingList } from '../lib/recipes';
+import { MEALS } from '../lib/meals';
 
 /** Escáner con la cámara (solo móvil): detecta el código en vivo. */
 function BarcodeScanner({ onCode, onClose }: { onCode: (c: string) => void; onClose: () => void }) {
@@ -61,7 +62,7 @@ const CATALOG = [
   { name: 'Ensalada verde grande', kcal: 120, p: 4, c: 12, f: 7 },
 ];
 
-const MEALS = ['Desayuno', 'Almuerzo', 'Cena', 'Snack', 'Extra'];
+
 
 /** Lector de calorías (solo móvil nativo): foto del plato → análisis IA → registro. */
 function FoodLens({ meal, onAdd }: { meal: string; onAdd: (f: { name: string; kcal: number; protein?: number; carbs?: number; fat?: number; meal?: string }) => Promise<void> }) {
@@ -71,6 +72,7 @@ function FoodLens({ meal, onAdd }: { meal: string; onAdd: (f: { name: string; kc
   const [food, setFood] = useState<FoodEstimate | null>(null);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const fromDataUrl = async (dataUrl: string) => {
     setError('');
@@ -115,9 +117,16 @@ function FoodLens({ meal, onAdd }: { meal: string; onAdd: (f: { name: string; kc
   };
 
   const save = async () => {
-    if (!food) return;
-    await onAdd({ name: `${food.name}`, kcal: food.kcal, protein: food.protein, carbs: food.carbs, fat: food.fat, meal });
-    setSaved(`Registrado en ${meal}: ${food.name} · ${food.kcal} kcal.`);
+    if (!food || saving) return;
+    setSaving(true);
+    try {
+      await onAdd({ name: `${food.name}`, kcal: food.kcal, protein: food.protein, carbs: food.carbs, fat: food.fat, meal });
+      setSaved(`Registrado en ${meal}: ${food.name} · ${food.kcal} kcal.`);
+    } catch {
+      setError('No se pudo guardar. Revisa tu conexión e inténtalo de nuevo.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -141,7 +150,7 @@ function FoodLens({ meal, onAdd }: { meal: string; onAdd: (f: { name: string; kc
         <div className="mt-2 rounded-xl border border-emerald/30 bg-emerald/10 p-3">
           <p className="text-xs font-bold">{food.name}</p>
           <p className="mt-1 text-[11px] text-muted">{food.kcal} kcal · P {food.protein}g · C {food.carbs}g · G {food.fat}g</p>
-          <button onClick={save} className="btn-emerald mt-2 w-full !py-2 text-sm">Registrar en {meal}</button>
+          <button onClick={save} disabled={saving} className="btn-emerald mt-2 w-full !py-2 text-sm disabled:opacity-50">{saving ? 'Guardando…' : `Registrar en ${meal}`}</button>
         </div>
       )}
       {saved && <p className="mt-2 text-xs text-emerald">{saved}</p>}
@@ -164,6 +173,11 @@ export default function Nutrition() {
   const [favs, setFavs] = useState<{ name: string; kcal: number; protein: number; carbs: number; fat: number; n: number }[]>([]);
   const [repeatMsg, setRepeatMsg] = useState('');
   const [repeating, setRepeating] = useState(false);
+  const [addingCustom, setAddingCustom] = useState(false);
+  const [catMsg, setCatMsg] = useState('');
+  const [diaryMsg, setDiaryMsg] = useState('');
+  const [addingFound, setAddingFound] = useState(false);
+  const catalogBusyRef = useRef(false);
 
   useEffect(() => {
     // Tus frecuentes: lo que más registraste (últimos datos disponibles)
@@ -201,10 +215,18 @@ export default function Nutrition() {
         setRepeatMsg('Ayer no registraste comidas.');
         return;
       }
-      for (const f of d.foods) {
-        await logFood({ name: f.name, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, meal: f.meal });
+      let copied = 0;
+      try {
+        for (const f of d.foods) {
+          await logFood({ name: f.name, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, meal: f.meal });
+          copied++;
+        }
+        setRepeatMsg(`Copiadas ${copied} comidas de ayer.`);
+      } catch {
+        setRepeatMsg(copied > 0
+          ? `Se copiaron ${copied} de ${d.foods.length} comidas. Revisa tu conexión e inténtalo de nuevo.`
+          : 'No se pudo copiar. Revisa tu conexión e inténtalo de nuevo.');
       }
-      setRepeatMsg(`Copiadas ${d.foods.length} comidas de ayer.`);
     } finally {
       setRepeating(false);
     }
@@ -213,14 +235,22 @@ export default function Nutrition() {
   const results = CATALOG.filter((f) => f.name.toLowerCase().includes(q.toLowerCase()));
 
   const addCustom = async () => {
+    if (addingCustom) return;
     const kcal = Number(custom.kcal);
     if (!custom.name.trim() || !Number.isFinite(kcal) || kcal <= 0) return;
-    await logFood({
-      name: custom.name.trim(), kcal: Math.round(kcal),
-      protein: Number(custom.p) || 0, carbs: Number(custom.c) || 0, fat: Number(custom.f) || 0,
-      meal,
-    });
-    setCustom({ name: '', kcal: '', p: '', c: '', f: '' });
+    setAddingCustom(true);
+    try {
+      await logFood({
+        name: custom.name.trim(), kcal: Math.round(kcal),
+        protein: Number(custom.p) || 0, carbs: Number(custom.c) || 0, fat: Number(custom.f) || 0,
+        meal,
+      });
+      setCustom({ name: '', kcal: '', p: '', c: '', f: '' });
+    } catch {
+      setCatMsg('No se pudo guardar. Revisa tu conexión.');
+    } finally {
+      setAddingCustom(false);
+    }
   };
 
   const grouped = MEALS.map((m) => ({ meal: m, items: day.foods.filter((f) => f.meal === m) })).filter((g) => g.items.length > 0);
@@ -263,19 +293,26 @@ export default function Nutrition() {
   };
 
   const addFound = async () => {
-    if (!found) return;
+    if (!found || addingFound) return;
+    setAddingFound(true);
     const g = Math.max(1, Number(grams) || 100);
     const k = g / 100;
-    await logFood({
-      name: `${found.name} (${g}g)`,
-      kcal: Math.round(found.kcal100 * k),
-      protein: Math.round(found.p100 * k * 10) / 10,
-      carbs: Math.round(found.c100 * k * 10) / 10,
-      fat: Math.round(found.f100 * k * 10) / 10,
-      meal,
-    });
-    setFound(null);
-    setCode('');
+    try {
+      await logFood({
+        name: `${found.name} (${g}g)`,
+        kcal: Math.round(found.kcal100 * k),
+        protein: Math.round(found.p100 * k * 10) / 10,
+        carbs: Math.round(found.c100 * k * 10) / 10,
+        fat: Math.round(found.f100 * k * 10) / 10,
+        meal,
+      });
+      setFound(null);
+      setCode('');
+    } catch {
+      setCodeError('No se pudo añadir. Revisa tu conexión.');
+    } finally {
+      setAddingFound(false);
+    }
   };
 
   return (
@@ -337,7 +374,7 @@ export default function Nutrition() {
               <input value={custom.c} onChange={(e) => setCustom({ ...custom, c: e.target.value })} type="number" min={0} className="input-kalory text-sm" placeholder="Carb g" />
               <input value={custom.f} onChange={(e) => setCustom({ ...custom, f: e.target.value })} type="number" min={0} className="input-kalory text-sm" placeholder="Grasa g" />
             </div>
-            <motion.button whileTap={{ scale: 0.97 }} onClick={addCustom} className="btn-emerald text-sm">Registrar en {meal}</motion.button>
+            <motion.button whileTap={{ scale: 0.97 }} onClick={addCustom} disabled={addingCustom} className="btn-emerald text-sm disabled:opacity-50">{addingCustom ? 'Guardando…' : `Registrar en ${meal}`}</motion.button>
           </div>
 
           <p className="mt-5 text-xs uppercase tracking-widest text-muted">Código de barras · {meal}</p>
@@ -368,7 +405,7 @@ export default function Nutrition() {
               <p className="mt-1 text-[11px] text-muted">Por 100g: {Math.round(found.kcal100)} kcal · P {found.p100}g · C {found.c100}g · G {found.f100}g</p>
               <div className="mt-2 flex gap-2">
                 <input value={grams} onChange={(e) => setGrams(e.target.value)} type="number" min={1} className="input-kalory !py-2 text-sm" placeholder="Gramos" />
-                <motion.button whileTap={{ scale: 0.97 }} onClick={addFound} className="btn-emerald !py-2 text-sm whitespace-nowrap">Añadir a {meal}</motion.button>
+                <motion.button whileTap={{ scale: 0.97 }} onClick={addFound} disabled={addingFound} className="btn-emerald !py-2 text-sm whitespace-nowrap disabled:opacity-50">{addingFound ? 'Añadiendo…' : `Añadir a ${meal}`}</motion.button>
               </div>
             </div>
           )}
@@ -383,12 +420,20 @@ export default function Nutrition() {
               <div key={f.name} className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
                 <div className="flex items-center gap-2">
                   <p className="text-xs font-bold flex-1">{f.name}</p>
-                  <button onClick={() => logFood({ name: f.name, kcal: f.kcal, protein: f.p, carbs: f.c, fat: f.f, meal })} className="rounded-lg bg-emerald/15 p-1.5 text-emerald hover:bg-emerald/25 transition-all"><Plus size={15} /></button>
+                  <button onClick={() => {
+                      if (catalogBusyRef.current) return;
+                      catalogBusyRef.current = true;
+                      setCatMsg('');
+                      logFood({ name: f.name, kcal: f.kcal, protein: f.p, carbs: f.c, fat: f.f, meal })
+                        .catch(() => setCatMsg('No se pudo añadir. Revisa tu conexión.'))
+                        .finally(() => { catalogBusyRef.current = false; });
+                    }} className="rounded-lg bg-emerald/15 p-1.5 text-emerald hover:bg-emerald/25 transition-all" aria-label={`Añadir ${f.name}`}><Plus size={15} /></button>
                 </div>
                 <p className="mt-1 text-[11px] text-muted">{f.kcal} kcal · P {f.p}g · C {f.c}g · G {f.f}g</p>
               </div>
             ))}
             {results.length === 0 && <p className="text-xs text-muted text-center py-6">Sin resultados para “{q}”</p>}
+            {catMsg && <p role="alert" className="text-xs text-fire">{catMsg}</p>}
           </div>
         </GlassCard>
 
@@ -399,6 +444,7 @@ export default function Nutrition() {
               <p className="mt-1 text-xs text-muted">Todo parte de cero: añade tu primera comida con el formulario.</p>
             </GlassCard>
           )}
+          {diaryMsg && <p role="alert" className="px-1 text-xs text-fire">{diaryMsg}</p>}
           {grouped.map((g) => (
             <GlassCard key={g.meal}>
               <div className="flex items-center gap-2">
@@ -412,7 +458,7 @@ export default function Nutrition() {
                       <p className="font-semibold truncate">{f.name}</p>
                       <p className="text-muted">{Math.round(f.kcal)} kcal · P {Math.round(f.protein)}g · C {Math.round(f.carbs)}g · G {Math.round(f.fat)}g</p>
                     </div>
-                    <button onClick={() => deleteFood(f.id)} className="text-muted hover:text-fire-hot transition-all"><Trash2 size={15} /></button>
+                    <button onClick={() => deleteFood(f.id).catch(() => setDiaryMsg('No se pudo borrar. Revisa tu conexión.'))} aria-label={`Borrar ${f.name}`} className="text-muted hover:text-fire-hot transition-all"><Trash2 size={15} /></button>
                   </div>
                 ))}
               </div>
@@ -430,6 +476,7 @@ function MenuSemanal() {
   const { profile, targets, logFood } = useStore();
   const [dayIdx, setDayIdx] = useState(0);
   const [added, setAdded] = useState('');
+  const [addingWeek, setAddingWeek] = useState(false);
   const menu = useMemo(
     () => buildWeekMenu(profile?.diet ?? 'omnivoro', profile?.mealsPerDay ?? 4),
     [profile?.diet, profile?.mealsPerDay],
@@ -438,15 +485,27 @@ function MenuSemanal() {
   const d = menu[dayIdx];
 
   const addDay = async () => {
-    for (const it of d.items) {
-      await logFood({
-        name: it.recipe.name, kcal: it.recipe.kcal,
-        protein: it.recipe.p, carbs: it.recipe.c, fat: it.recipe.f,
-        meal: it.meal === 'Extra' ? 'Extra' : it.meal,
-      });
+    if (addingWeek) return;
+    setAddingWeek(true);
+    let copied = 0;
+    try {
+      for (const it of d.items) {
+        await logFood({
+          name: it.recipe.name, kcal: it.recipe.kcal,
+          protein: it.recipe.p, carbs: it.recipe.c, fat: it.recipe.f,
+          meal: it.meal,
+        });
+        copied++;
+      }
+      setAdded(`Añadido el ${d.day} al diario de hoy.`);
+    } catch {
+      setAdded(copied > 0
+        ? `Se añadieron ${copied} de ${d.items.length} platos. Revisa tu conexión e inténtalo de nuevo.`
+        : 'No se pudo añadir. Revisa tu conexión.');
+    } finally {
+      setAddingWeek(false);
+      window.setTimeout(() => setAdded(''), 4000);
     }
-    setAdded(`Añadido el ${d.day} al diario de hoy.`);
-    setTimeout(() => setAdded(''), 3000);
   };
 
   return (
@@ -477,8 +536,8 @@ function MenuSemanal() {
           ))}
         </div>
         <div className="mt-3 flex items-center gap-2">
-          <motion.button whileTap={{ scale: 0.97 }} onClick={addDay} className="btn-emerald !py-2.5 text-sm flex-1">
-            Añadir {d.day} al diario de hoy ({d.kcal} kcal)
+          <motion.button whileTap={{ scale: 0.97 }} onClick={addDay} disabled={addingWeek} className="btn-emerald !py-2.5 text-sm flex-1 disabled:opacity-50">
+            {addingWeek ? 'Añadiendo…' : `Añadir ${d.day} al diario de hoy (${d.kcal} kcal)`}
           </motion.button>
         </div>
         {added && <p className="mt-2 text-xs text-emerald">{added}</p>}

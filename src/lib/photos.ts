@@ -19,10 +19,14 @@ function loadAll(): ProgressPhoto[] {
   return [];
 }
 
-function saveAll(list: ProgressPhoto[]) {
+/** Guarda; si la cuota de localStorage está llena devuelve false. */
+function saveAll(list: ProgressPhoto[]): boolean {
   try {
     localStorage.setItem(KEY, JSON.stringify(list.slice(-MAX)));
-  } catch { /* cuota llena: conserva lo que quepa */ }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function listPhotos(userId: number): ProgressPhoto[] {
@@ -60,6 +64,6 @@ export async function addPhoto(userId: number, date: string, weight: number | nu
   const entry: ProgressPhoto = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, userId, date, weight, img };
   const all = loadAll();
   all.push(entry);
-  saveAll(all);
+  if (!saveAll(all)) throw new Error('cuota'); // no se perdió nada en disco: la foto no se guardó
   return entry;
 }

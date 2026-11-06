@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: kalory-api
+    runtime: docker
+    dockerfilePath: ./Base de Datos/Dockerfile
+    dockerContext: ./Base de Datos
+    plan: free
+    healthCheckPath: /api/health
+    disk:
+      name: kalory-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: DATA_FILE
+        value: /data/kalory-online.db
+      - key: JWT_SECRET
+        sync: false
+      - key: ADMIN_TOKEN
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        value: 60146882018-1ad06p3sgqlo46ka8s2msm50r2m2durd.apps.googleusercontent.com
+      - key: GOOGLE_WEB_CLIENT_ID
+        value: 60146882018-00sslbouh76ssegs3j7saoot13a6j1ee.apps.googleusercontent.com
+      - key: GOOGLE_WEB_CLIENT_SECRET
+        sync: false

@@ -33,6 +33,17 @@ const profKey = (uid: number) => `kalory-shadow-profile:${uid}`;
 const achKey = (uid: number) => `kalory-shadow-ach:${uid}`;
 const histKey = (uid: number) => `kalory-shadow-history:${uid}`;
 const wKey = (uid: number) => `kalory-shadow-weights:${uid}`;
+const idMapKey = (uid: number) => `kalory-sync-idmap:${uid}`;
+
+/** Relación id local (negativo, generado sin conexión) → id real del servidor.
+ *  Se persiste para que un deleteFood offline posterior borre lo correcto. */
+function loadIdMap(uid: number): Record<string, number> {
+  return read<Record<string, number>>(idMapKey(uid)) ?? {};
+}
+function saveIdMap(uid: number, map: Record<string, number>) {
+  const entries = Object.entries(map).slice(-500);
+  write(idMapKey(uid), Object.fromEntries(entries));
+}
 
 function read<T>(k: string): T | null {
   try {
@@ -140,12 +151,31 @@ export async function flushQueue(
   for (const op of q) {
     try {
       switch (op.kind) {
-        case 'food':
-          await call('/api/foods', 'POST', op.payload);
+        case 'food': {
+          const r = (await call('/api/foods', 'POST', op.payload)) as { id?: number } | null;
+          const localId = Number(op.payload.clientId);
+          if (r && typeof r.id === 'number' && Number.isFinite(localId)) {
+            const map = loadIdMap(uid);
+            map[String(localId)] = r.id;
+            saveIdMap(uid, map);
+          }
           break;
-        case 'deleteFood':
-          await call(`/api/foods/${op.payload.id}`, 'DELETE');
+        }
+        case 'deleteFood': {
+          const rawId = Number(op.payload.id);
+          if (rawId < 0) {
+            // Comida creada sin conexión: resuelve el id real en el servidor.
+            const map = loadIdMap(uid);
+            const serverId = map[String(rawId)];
+            if (serverId == null) break; // la comida nunca llegó al servidor: nada que borrar
+            await call(`/api/foods/${serverId}`, 'DELETE');
+            delete map[String(rawId)];
+            saveIdMap(uid, map);
+            break;
+          }
+          await call(`/api/foods/${rawId}`, 'DELETE');
           break;
+        }
         case 'water':
           await call('/api/water', 'POST', op.payload);
           break;

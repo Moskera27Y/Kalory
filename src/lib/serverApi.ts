@@ -236,8 +236,9 @@ export class ServerDb implements DbApi {
       return d.id;
     } catch (e) {
       if (uid && isOfflineError(e)) {
-        enqueue(uid, { kind: 'food', payload: f as unknown as Record<string, unknown> });
-        return applyFood(uid, f.date, f);
+        const localId = applyFood(uid, f.date, f);
+        enqueue(uid, { kind: 'food', payload: { ...f, clientId: localId } as unknown as Record<string, unknown> });
+        return localId;
       }
       throw e;
     }
@@ -246,7 +247,7 @@ export class ServerDb implements DbApi {
   async deleteFood(id: number) {
     const uid = this.uid;
     try {
-      await fetch(this.url + '/api/foods/' + id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + this.token } });
+      await req(this.url, this.token, '/api/foods/' + id, 'DELETE');
     } catch (e) {
       if (uid && isOfflineError(e)) {
         enqueue(uid, { kind: 'deleteFood', payload: { id } });
@@ -322,7 +323,7 @@ export class ServerDb implements DbApi {
   }
 
   async resetAll() {
-    await fetch(this.url + '/api/account/data', { method: 'DELETE', headers: { Authorization: 'Bearer ' + this.token } });
+    await req(this.url, this.token, '/api/account/data', 'DELETE');
     return true;
   }
 

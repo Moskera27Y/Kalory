@@ -12,6 +12,7 @@ import { fastingState, PROTOCOLS } from '../lib/fasting';
 import { UtensilsCrossed, MoonStar, Moon } from 'lucide-react';
 import { useStore } from '../lib/store';
 import { staggerParent, staggerChild } from '../lib/motion';
+import { MEALS } from '../lib/meals';
 
 function Skeleton({ className = '' }: { className?: string }) {
   return <div className={`skeleton ${className}`} />;
@@ -25,9 +26,11 @@ export default function Dashboard() {
 
   const [quickName, setQuickName] = useState('');
   const [quickKcal, setQuickKcal] = useState('');
+  const [savingQuick, setSavingQuick] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
   const [bed, setBed] = useState('23:00');
   const [wake, setWake] = useState('07:00');
+  const [sleepMsg, setSleepMsg] = useState('');
   const [, setSleepTick] = useState(0);
 
   useEffect(() => {
@@ -55,11 +58,17 @@ export default function Dashboard() {
   ];
 
   const quickAdd = async () => {
+    if (savingQuick) return;
     const kcal = Math.round(Number(quickKcal));
     if (!quickName.trim() || !Number.isFinite(kcal) || kcal <= 0) return;
-    await logFood({ name: quickName.trim(), kcal, meal: 'extra' });
-    setQuickName('');
-    setQuickKcal('');
+    setSavingQuick(true);
+    try {
+      await logFood({ name: quickName.trim(), kcal, meal: 'Extra' });
+      setQuickName('');
+      setQuickKcal('');
+    } finally {
+      setSavingQuick(false);
+    }
   };
 
   if (loading) {
@@ -284,7 +293,7 @@ export default function Dashboard() {
               <input value={quickName} onChange={(e) => setQuickName(e.target.value)} className="input-kalory text-sm" placeholder="Ej. Ensalada de atún" />
               <div className="flex gap-2">
                 <input value={quickKcal} onChange={(e) => setQuickKcal(e.target.value)} type="number" min={1} className="input-kalory text-sm" placeholder="kcal" />
-                <motion.button whileTap={{ scale: 0.97 }} onClick={quickAdd} className="btn-emerald !px-4 text-sm whitespace-nowrap">Añadir</motion.button>
+                <motion.button whileTap={{ scale: 0.97 }} onClick={quickAdd} disabled={savingQuick} className="btn-emerald !px-4 text-sm whitespace-nowrap disabled:opacity-50">{savingQuick ? 'Guardando…' : 'Añadir'}</motion.button>
               </div>
             </div>
             {day.foods.length > 0 && (
@@ -358,9 +367,21 @@ export default function Dashboard() {
                       <input type="time" value={wake} onChange={(e) => setWake(e.target.value)} className="rounded-lg bg-white/5 border border-white/10 px-2 py-1.5 text-xs text-center tabular-nums h-9" />
                     </label>
                   </div>
-                  <motion.button whileTap={{ scale: 0.97 }} onClick={() => { if (user) { saveSleep(user.id, bed, wake); setSleepTick((x) => x + 1); } }} className="btn-emerald mt-2 w-full !py-2 text-xs">
+                  <motion.button whileTap={{ scale: 0.97 }} onClick={() => {
+                    if (!user) return;
+                    try {
+                      saveSleep(user.id, bed, wake);
+                      setSleepMsg('');
+                      setSleepTick((x) => x + 1);
+                    } catch (e) {
+                      setSleepMsg((e as Error)?.message === 'hora_igual'
+                        ? 'La hora de acostar y la de despertar deben ser distintas.'
+                        : 'No se pudo guardar el sueño. Revisa las horas.');
+                    }
+                  }} className="btn-emerald mt-2 w-full !py-2 text-xs">
                     Guardar noche
                   </motion.button>
+                  {sleepMsg && <p role="alert" className="mt-1.5 text-center text-[11px] text-fire-hot">{sleepMsg}</p>}
                 </>
               );
             })()}
@@ -389,15 +410,19 @@ function DaySummaryModal({ consumed, target, burned, foods, done, onClose }: {
   foods: { id: number; name: string; kcal: number; meal: string }[];
   done: string[]; onClose: () => void;
 }) {
-  const meals = ['Desayuno', 'Almuerzo', 'Cena', 'Snack', 'Extra'];
-  const byMeal = meals
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  const byMeal = MEALS
     .map((m) => ({ meal: m, items: foods.filter((f) => f.meal === m) }))
     .filter((g) => g.items.length > 0);
   const balance = Math.round(consumed - target);
   return (
     <motion.div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
-      <motion.div
+      <motion.div role="dialog" aria-modal="true" aria-label="Resumen de hoy"
         className="glass-strong w-full max-w-md p-6 max-h-[85vh] overflow-y-auto"
         initial={{ scale: 0.9, y: 24 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 260, damping: 24 }}
@@ -406,7 +431,7 @@ function DaySummaryModal({ consumed, target, burned, foods, done, onClose }: {
         <div className="flex items-center gap-2">
           <PieChart size={17} className="text-emerald" />
           <p className="font-bold">Resumen de hoy</p>
-          <button onClick={onClose} className="ml-auto chip !px-3 !py-1.5 text-muted"><X size={14} /></button>
+          <button onClick={onClose} autoFocus aria-label="Cerrar resumen" className="ml-auto chip !px-3 !py-1.5 text-muted"><X size={14} /></button>
         </div>
         <p className="mt-2 text-xs text-muted leading-relaxed">
           El anillo verde muestra lo que <b className="text-white">comiste</b> frente a tu meta;
@@ -434,10 +459,10 @@ function DaySummaryModal({ consumed, target, burned, foods, done, onClose }: {
 
         <p className="mt-4 text-xs uppercase tracking-widest text-muted">Quemadas (est.) · {burned} kcal</p>
         <div className="mt-2 flex flex-col gap-1.5">
-          {done.length === 0 && <p className="text-xs text-muted">Sin ejercicios hoy. Cada ejercicio suma ~90 kcal.</p>}
+          {done.length === 0 && <p className="text-xs text-muted">Sin ejercicios hoy. Cada ejercicio suma ~{KCAL_PER_EXERCISE} kcal.</p>}
           {done.map((e) => (
             <div key={e} className="flex justify-between text-xs rounded-lg bg-fire/10 border border-fire/20 px-3 py-2">
-              <span>{e}</span><b className="tabular-nums">~90</b>
+              <span>{e}</span><b className="tabular-nums">~{KCAL_PER_EXERCISE}</b>
             </div>
           ))}
         </div>

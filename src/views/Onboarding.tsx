@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, ArrowLeft, Check, Flame, Leaf, Beef, WheatOff, Salad, Home, Building2, Shuffle, Coffee } from 'lucide-react';
@@ -50,26 +50,36 @@ export default function Onboarding({ mode = 'first' }: { mode?: 'first' | 'edit'
   const [form, setForm] = useState<UserProfile>(profile ?? { ...EMPTY_PROFILE });
   const [thinking, setThinking] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [finishError, setFinishError] = useState('');
   const set = <K extends keyof UserProfile>(k: K, v: UserProfile[K]) => setForm((f) => ({ ...f, [k]: v }));
 
+  const inRange = (v: number, min: number, max: number) => Number.isFinite(v) && v >= min && v <= max;
   const canNext =
-    step === 0 ? form.name.trim().length > 1 && form.age > 0
-    : step === 1 ? form.weightKg > 0 && form.targetWeightKg > 0 && form.heightCm > 0
+    step === 0 ? form.name.trim().length > 1 && inRange(form.age, 10, 100)
+    : step === 1 ? inRange(form.weightKg, 30, 300) && inRange(form.targetWeightKg, 30, 300) && inRange(form.heightCm, 120, 230)
     : true;
+
+  const timeoutRef = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
+  }, []);
 
   const next = () => {
     if (step === 5) {
       setThinking(true);
-      setTimeout(() => { setThinking(false); setStep(6); }, 1400);
+      timeoutRef.current = window.setTimeout(() => { setThinking(false); setStep(6); }, 1400);
     } else setStep((s) => s + 1);
   };
   const back = () => setStep((s) => Math.max(0, s - 1));
 
   const finish = async () => {
+    setFinishError('');
     setSaving(true);
     try {
       await completeOnboarding(form);
       if (mode === 'edit') navigate('/perfil');
+    } catch {
+      setFinishError('No se pudo guardar tu perfil. Revisa tu conexión e inténtalo de nuevo.');
     } finally {
       setSaving(false);
     }
@@ -79,7 +89,7 @@ export default function Onboarding({ mode = 'first' }: { mode?: 'first' | 'edit'
   const macrosPreview = calcMacros(form);
 
   return (
-    <div className="onboarding h-full overflow-y-auto">
+    <main className="onboarding h-full overflow-y-auto">
       <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
         <div className="flex items-center justify-between">
           <Logo size={36} />
@@ -267,6 +277,7 @@ export default function Onboarding({ mode = 'first' }: { mode?: 'first' | 'edit'
           </AnimatePresence>
         </div>
 
+        {finishError && <p role="alert" className="mt-3 text-sm text-fire-hot">{finishError}</p>}
         {!thinking && (
           <div className="mt-8 flex items-center justify-between">
             <button onClick={back} disabled={step === 0} className="chip flex items-center gap-2 text-muted disabled:opacity-30"><ArrowLeft size={16} /> Atrás</button>
@@ -282,6 +293,6 @@ export default function Onboarding({ mode = 'first' }: { mode?: 'first' | 'edit'
           </div>
         )}
       </div>
-    </div>
+    </main>
   );
 }

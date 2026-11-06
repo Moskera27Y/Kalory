@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Users, Trophy, Plus, Medal, Flame, Dumbbell } from 'lucide-react';
 import { GlassCard } from '../components/ui';
@@ -13,17 +13,27 @@ export default function Comunidad() {
   const [friends, setFriends] = useState<FriendInfo[]>([]);
   const [board, setBoard] = useState<BoardRow[]>([]);
   const [msg, setMsg] = useState('');
+  const [msgOk, setMsgOk] = useState(false);
   const [busy, setBusy] = useState(false);
+  const aliveRef = useRef(true);
+
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => { aliveRef.current = false; };
+  }, []);
 
   const load = async () => {
     try {
       const [c, f, b] = await Promise.all([getInviteCode(), getFriends(), getLeaderboard()]);
+      if (!aliveRef.current) return;
       setMyCode(c);
       setFriends(f);
       setBoard(b);
       if (b.length > 0 && b[0].me) unlockMedal('top_1').catch(() => undefined);
     } catch {
+      if (!aliveRef.current) return;
       setMsg('Solo disponible en modo online.');
+      setMsgOk(false);
     }
   };
 
@@ -49,11 +59,13 @@ export default function Comunidad() {
     try {
       const f = await addFriend(code.trim().toUpperCase());
       setMsg(`¡${f.name} ahora es tu amigo!`);
+      setMsgOk(true);
       setCode('');
       unlockMedal('amigo_1').catch(() => undefined);
       await load();
     } catch (e) {
       const c = (e as { code?: string })?.code;
+      setMsgOk(false);
       setMsg(c === 'codigo_invalido' ? 'Código inválido (formato KAL-XXXXXX).'
         : c === 'eres_tu' ? 'Ese es tu propio código.'
         : c === 'no_existe' ? 'Nadie usa ese código todavía.'
@@ -113,7 +125,7 @@ export default function Comunidad() {
                 <span className="flex items-center gap-1"><Plus size={15} /> Añadir</span>
               </motion.button>
             </div>
-            {msg && <p className="mt-2 text-xs text-fire">{msg}</p>}
+            {msg && <p role="status" className={`mt-2 text-xs ${msgOk ? 'text-emerald' : 'text-fire'}`}>{msg}</p>}
           </GlassCard>
 
           <GlassCard>

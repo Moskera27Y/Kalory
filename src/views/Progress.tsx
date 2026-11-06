@@ -87,11 +87,14 @@ export default function Progress() {
   const [photos, setPhotos] = useState<ProgressPhoto[]>(() => user?.id ? listPhotos(user.id) : []);
   const [compare, setCompare] = useState<string[]>([]);
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoMsg, setPhotoMsg] = useState('');
+  const [weightError, setWeightError] = useState('');
   const [healthMsg, setHealthMsg] = useState('');
   const canImport = isNative() && stepsPluginAvailable();
 
   const data = history.slice(-range);
-  const avgKcal = data.length ? Math.round(data.reduce((a, d) => a + d.kcal, 0) / data.length) : 0;
+  const kcalDays = data.filter((d) => d.kcal > 0);
+  const avgKcal = kcalDays.length ? Math.round(kcalDays.reduce((a, d) => a + d.kcal, 0) / kcalDays.length) : 0;
   const activeDays = data.filter((d) => d.kcal > 0 || d.waterMl > 0 || d.exercises > 0).length;
   const totalWorkouts = data.reduce((a, d) => a + d.exercises, 0);
   const lastWeight = [...history].reverse().find((d) => d.weight != null)?.weight ?? null;
@@ -112,7 +115,11 @@ export default function Progress() {
 
   const saveWeight = async () => {
     const v = Number(weightInput.replace(',', '.'));
-    if (!Number.isFinite(v)) return;
+    if (!Number.isFinite(v) || v <= 20 || v > 400) {
+      setWeightError('Introduce un peso válido entre 20 y 400 kg.');
+      return;
+    }
+    setWeightError('');
     await setWeight(v, todayStr());
     setWeightInput('');
   };
@@ -164,7 +171,7 @@ export default function Progress() {
             return [
               ['Mejor racha', `${best} días`],
               ['Día top kcal', bestDay && bestDay.kcal > 0 ? `${Math.round(bestDay.kcal)} · ${bestDay.date.slice(5)}` : '—'],
-              ['Ejercicios (60d)', `${totEx}`],
+              ['Ejercicios (30d)', `${totEx}`],
               ['Horas de ayuno', `${Math.round(totalFastedHours(user?.id ?? 0))} h`],
             ].map(([k, v]) => (
               <div key={k} className="rounded-xl bg-white/[0.04] border border-white/5 p-3">
@@ -226,6 +233,7 @@ export default function Progress() {
             type="number" min={20} max={400} step="0.1" className="input-kalory !py-2 text-sm" placeholder={`Peso de hoy en kg${profile ? ` (meta ${profile.targetWeightKg})` : ''}`} />
           <motion.button whileTap={{ scale: 0.97 }} onClick={saveWeight} className="btn-emerald !py-2 text-sm whitespace-nowrap">Registrar</motion.button>
         </div>
+        {weightError && <p role="alert" className="mt-1.5 text-xs text-fire-hot">{weightError}</p>}
         {canImport && (
           <button
             onClick={async () => {
@@ -292,15 +300,21 @@ export default function Progress() {
                 e.target.value = '';
                 if (!f || !user) return;
                 setPhotoBusy(true);
+                setPhotoMsg('');
                 try {
                   const w = [...history].reverse().find((d) => d.weight != null)?.weight ?? null;
                   await addPhoto(user.id, todayStr(), w, f);
                   setPhotos(listPhotos(user.id));
                   await unlockMedal('foto_1');
+                } catch (e) {
+                  setPhotoMsg((e as Error)?.message === 'cuota'
+                    ? 'No cabe la foto en la memoria del equipo. Borra alguna foto antigua e inténtalo de nuevo.'
+                    : 'No se pudo guardar la foto. Revisa el archivo o inténtalo de nuevo.');
                 } finally { setPhotoBusy(false); }
               }} />
           </label>
         </div>
+        {photoMsg && <p role="alert" className="mt-2 text-xs text-fire-hot">{photoMsg}</p>}
         {photos.length === 0 ? (
           <p className="mt-3 text-xs text-muted text-center py-4">Sin fotos aún. Añade la primera para ver tu evolución visual.</p>
         ) : (
@@ -326,14 +340,15 @@ export default function Progress() {
             </div>
             {compare.length === 2 && (
               <div className="mt-3 grid grid-cols-2 gap-2">
-                {compare.map((id) => {
-                  const p = photos.find((x) => x.id === id)!;
-                  return (
+                {compare.flatMap((id) => {
+                  const p = photos.find((x) => x.id === id);
+                  if (!p) return []; // foto borrada mientras comparaba: omite, no revientes
+                  return [(
                     <div key={id} className="overflow-hidden rounded-xl border border-fire/40">
                       <img src={p.img} alt={p.date} className="w-full object-cover" />
                       <p className="bg-black/60 px-2 py-1 text-center text-[11px] font-bold">{p.date}{p.weight != null ? ` · ${p.weight} kg` : ''}</p>
                     </div>
-                  );
+                  )];
                 })}
               </div>
             )}

@@ -16,8 +16,13 @@ const jwt = require('jsonwebtoken');
 const initSqlJs = require('sql.js');
 
 const PORT = Number(process.env.PORT || 3001);
-const JWT_SECRET = process.env.JWT_SECRET || 'CAMBIA-ESTE-SECRETO-EN-PRODUCCION';
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'kalory-admin-local';
+// Secretos OBLIGATORIOS: sin valores por defecto, cualquiera podría forjar tokens.
+const JWT_SECRET = process.env.JWT_SECRET;
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
+if (!JWT_SECRET || !ADMIN_TOKEN) {
+  console.error('[config] FALTAN JWT_SECRET y/o ADMIN_TOKEN. Defínelos en el entorno (ver .env.example / Railway Variables).');
+  process.exit(1);
+}
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '60146882018-1ad06p3sgqlo46ka8s2msm50r2m2durd.apps.googleusercontent.com';
 // Cliente tipo Web (solo para el login móvil vía navegador). Si no se define, se usa el de escritorio.
 const GOOGLE_WEB_CLIENT_ID = process.env.GOOGLE_WEB_CLIENT_ID || '';
@@ -31,14 +36,12 @@ const DATA_FILE = process.env.DATA_FILE || ((() => {
     return cand;
   } catch { return path.join(__dirname, 'data', 'kalory-online.db'); }
 })());
-if (!process.env.JWT_SECRET || !process.env.ADMIN_TOKEN) {
-  console.warn('[seguridad] JWT_SECRET/ADMIN_TOKEN por defecto: define ambos en producción.');
-}
+
 
 let SQL = null;
 let db = null;
 
-async function ready() {
+async function init() {
   if (db) return db;
   if (!SQL) {
     SQL = await initSqlJs({ locateFile: (f) => path.join(__dirname, 'node_modules', 'sql.js', 'dist', f) });
@@ -110,12 +113,37 @@ async function ready() {
     CREATE INDEX IF NOT EXISTS idx_food_user_date ON food_log(user_id, date);
     CREATE INDEX IF NOT EXISTS idx_water_user_date ON water_log(user_id, date);
   `);
+  // Migración única: código de invitación aleatorio (antes se derivaba del id → enumerable)
+  try { db.exec('ALTER TABLE users ADD COLUMN invite_code TEXT'); } catch { /* ya existe */ }
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite_code ON users(invite_code)');
+  const missing = rows('SELECT id FROM users WHERE invite_code IS NULL');
+  for (const r of missing) {
+    run('UPDATE users SET invite_code=? WHERE id=?', [genInviteCode(), r.id]);
+  }
+  if (missing.length) persist();
   return db;
+}
+let readyP = null;
+function ready() {
+  if (!readyP) readyP = init().catch((e) => { readyP = null; throw e; });
+  return readyP;
 }
 
 function persist() {
-  try { fs.writeFileSync(DATA_FILE, Buffer.from(db.export())); }
-  catch (e) { console.error('[db] No se pudo guardar:', e.message); }
+  // Escritura atómica: tmp + rename (un corte a mitad no corrompe la BD).
+  // Lanza en caso de error: la ruta responde 500 y el log queda claro (antes mentalmente "ok" con la BD rota).
+  const tmp = DATA_FILE + '.tmp';
+  try {
+    const buf = Buffer.from(db.export());
+    const fd = fs.openSync(tmp, 'w');
+    try { fs.writeSync(fd, buf); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    if (fs.existsSync(DATA_FILE)) fs.copyFileSync(DATA_FILE, DATA_FILE + '.bak');
+    fs.renameSync(tmp, DATA_FILE);
+  } catch (e) {
+    try { fs.unlinkSync(tmp); } catch { /* ignorar */ }
+    console.error('[db] NO se pudo guardar la base de datos:', e.message);
+    throw Object.assign(new Error('[db] ' + e.message), { code: 'db_error' });
+  }
 }
 
 function rows(sql, params = []) {
@@ -134,6 +162,17 @@ function run(sql, params = []) {
 
 const now = () => new Date().toISOString();
 const pub = (r) => ({ id: r.id, name: r.name, email: r.email, provider: r.provider || 'local' });
+/** Lo que se expone a OTROS usuarios (amigos/ranking): jamás el email. */
+const pubPublic = (r) => ({ id: r.id, name: r.name, provider: r.provider || 'local' });
+const INVITE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // sin 0/O ni 1/I/L
+function genInviteCode() {
+  for (let i = 0; i < 30; i++) {
+    let code = 'KAL-';
+    for (const b of crypto.randomBytes(6)) code += INVITE_ALPHABET[b % INVITE_ALPHABET.length];
+    if (!rows('SELECT 1 AS ok FROM users WHERE invite_code=?', [code]).length) return code;
+  }
+  throw new Error('invite_code_agotado');
+}
 const hashPw = (pw, salt) => crypto.scryptSync(String(pw), salt, 64).toString('hex');
 const sign = (uid) => jwt.sign({ uid }, JWT_SECRET, { expiresIn: '30d' });
 const validEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(e || '').trim());
@@ -187,7 +226,10 @@ async function verifyGoogleIdToken(idToken) {
 }
 
 const app = express();
-app.use(express.json({ limit: '1mb' }));
+app.set('trust proxy', 1); // en Railway/Cloudflare la IP llega vía X-Forwarded-For
+app.disable('x-powered-by');
+// Fotos base64 (~2.5MB de tope en /api/food/analyze) + margen: 4mb
+app.use(express.json({ limit: '4mb' }));
 // Envuelve rutas async: Express 4 no captura rechazos (evita caídas por unhandledRejection)
 ['get', 'post', 'put', 'delete'].forEach((m) => {
   const orig = app[m].bind(app);
@@ -518,7 +560,10 @@ app.post('/api/water', auth, async (req, res) => {
   await ready();
   if (!validDate(req.body.date)) return res.status(400).json({ ok: false, error: 'fecha_invalida' });
   const ml = Math.round(num(req.body.ml));
-  if (!(ml > 0 && ml <= 5000)) return res.status(400).json({ ok: false, error: 'cantidad_invalida' });
+  // Se admiten correcciones negativas (p. ej. −250 ml) con el mismo tope en valor absoluto.
+  if (!(Number.isFinite(ml) && ml !== 0 && Math.abs(ml) <= 5000)) {
+    return res.status(400).json({ ok: false, error: 'cantidad_invalida' });
+  }
   run('INSERT INTO water_log(user_id,date,ml,created_at) VALUES(?,?,?,?)', [req.uid, req.body.date, ml, now()]);
   persist();
   const w = rows('SELECT COALESCE(SUM(ml),0) AS total FROM water_log WHERE user_id=? AND date=?', [req.uid, req.body.date])[0];
@@ -654,14 +699,12 @@ app.get('/api/version', (req, res) => {
 });
 
 // ---------- comunidad: amigos y ranking semanal ----------
-function inviteCode(uid) {
-  return 'KAL-' + Number(uid).toString(36).toUpperCase().padStart(6, '0');
-}
+/** Los códigos son aleatorios y están almacenados en BD: no se pueden enumerar ni adivinar. */
 function uidFromCode(code) {
-  const m = /^KAL-([0-9A-Z]{1,6})$/i.exec(String(code || '').trim());
-  if (!m) return null;
-  const id = parseInt(m[1], 36);
-  return Number.isFinite(id) && id > 0 ? id : null;
+  const c = String(code || '').trim().toUpperCase();
+  if (!/^KAL-[A-Z2-9]{6}$/.test(c)) return null;
+  const row = rows('SELECT id FROM users WHERE invite_code=?', [c])[0];
+  return row ? row.id : null;
 }
 function weekStart() {
   const n = new Date();
@@ -682,7 +725,15 @@ function weekScore(uid) {
 
 app.get('/api/social/code', auth, async (req, res) => {
   await ready();
-  res.json({ ok: true, code: inviteCode(req.uid) });
+  const u = rows('SELECT id, invite_code FROM users WHERE id=?', [req.uid])[0];
+  if (!u) return res.status(401).json({ ok: false, error: 'no_user' });
+  if (!u.invite_code) {
+    const code = genInviteCode();
+    run('UPDATE users SET invite_code=? WHERE id=?', [code, req.uid]);
+    persist();
+    return res.json({ ok: true, code });
+  }
+  res.json({ ok: true, code: u.invite_code });
 });
 
 app.post('/api/social/add', auth, async (req, res) => {
@@ -698,7 +749,7 @@ app.post('/api/social/add', auth, async (req, res) => {
   run('INSERT INTO friendships(user_id,friend_id,created_at) VALUES(?,?,?) ON CONFLICT(user_id,friend_id) DO NOTHING', [req.uid, fid, now()]);
   run('INSERT INTO friendships(user_id,friend_id,created_at) VALUES(?,?,?) ON CONFLICT(user_id,friend_id) DO NOTHING', [fid, req.uid, now()]);
   persist();
-  res.json({ ok: true, friend: pub(exists) });
+  res.json({ ok: true, friend: pubPublic(exists) });
 });
 
 app.get('/api/social/friends', auth, async (req, res) => {
@@ -708,7 +759,7 @@ app.get('/api/social/friends', auth, async (req, res) => {
     ok: true,
     friends: ids.map((id) => {
       const u = rows('SELECT * FROM users WHERE id=?', [id])[0];
-      return u ? { ...pub(u), week: weekScore(id) } : null;
+      return u ? { ...pubPublic(u), week: weekScore(id) } : null;
     }).filter(Boolean),
   });
 });
@@ -719,7 +770,7 @@ app.get('/api/social/leaderboard', auth, async (req, res) => {
   const all = [req.uid, ...ids];
   const rows_ = all.map((id) => {
     const u = rows('SELECT * FROM users WHERE id=?', [id])[0];
-    return u ? { ...pub(u), me: id === req.uid, week: weekScore(id) } : null;
+    return u ? { ...pubPublic(u), me: id === req.uid, week: weekScore(id) } : null;
   }).filter(Boolean);
   rows_.sort((a, b) => b.week.score - a.week.score);
   res.json({ ok: true, board: rows_ });
@@ -770,9 +821,16 @@ app.get('/api/admin/users/:id', adminOnly, async (req, res) => {
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'admin.html')));
 app.get('/api/health', (req, res) => res.json({ ok: true, service: 'kalory-server', time: now() }));
 
-// Errores async no capturados → 500 JSON en vez de colgar la petición
+// Ruta API desconocida → 404 JSON (antes: HTML de Express)
+app.use('/api', (req, res) => res.status(404).json({ ok: false, error: 'no_encontrado' }));
+
+// Errores async no capturados → JSON con el código correcto (antes: 500 genérico o colgada)
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
+  const t = err?.type;
+  if (t === 'entity.too.large') return res.status(413).json({ ok: false, error: 'imagen_grande' });
+  if (t === 'entity.parse.failed') return res.status(400).json({ ok: false, error: 'json_invalido' });
+  if (err?.code === 'db_error') return res.status(500).json({ ok: false, error: 'db_error' });
   console.error('[api]', req.method, req.path, err?.message || err);
   if (res.headersSent) return next(err);
   res.status(500).json({ ok: false, error: 'server_error' });

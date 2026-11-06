@@ -3,6 +3,7 @@ import type { AuthResult, AuthUser, DayData, DayHistory, MacroTargets, UserProfi
 import { calcMacros } from './calculations';
 import { getDb, todayStr, daysAgo, type DbApi } from './db';
 import { ServerDb, clearServerSession, loadServerUrl, setServerUrlOnly, clearServerOverride, pendingCount } from './serverApi';
+import { clearLocalUserData } from './localCleanup';
 import { getStepsToday, isNative, stepsPluginAvailable } from './steps';
 import { loadProfileShadow, loadAchShadow, loadDay, uidFromToken } from './syncQueue';
 
@@ -23,6 +24,8 @@ interface Store {
   celebration: string | null;
   dismissCelebration: () => void;
   serverUrl: string;
+  /** true cuando no se pudo contactar al servidor y se está viendo la copia local. */
+  offline: boolean;
   setServerUrl: (url: string) => void;
   useOfficialServer: () => void;
   register: (u: { name: string; email: string; password: string }) => Promise<AuthResult>;
@@ -86,6 +89,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [stepsSupported, setStepsSupported] = useState(false);
   const [stepsError, setStepsError] = useState<string | null>(null);
   const [syncPending, setSyncPending] = useState(0);
+  const [offline, setOffline] = useState(false);
 
   const clearLocal = () => {
     setProfile(null);
@@ -102,6 +106,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setStepsSupported(false);
     setStepsError(null);
     setSyncPending(0);
+    setOffline(false);
   };
 
   const isActiveDay = (d: DayHistory) => d.kcal > 0 || d.waterMl > 0 || d.exercises > 0;
@@ -180,13 +185,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setAchievements(st.achievements.map((a) => a.id));
       setAchievementDates(Object.fromEntries(st.achievements.map((a) => [a.id, a.unlocked_at])));
       setActiveDays(stats.activeDays);
+      setOffline(false);
       await refreshSync();
     } catch (e) {
       // Sin sesión en el servidor → volver a bienvenida
       if ((e as { code?: string })?.code === 'no_session') {
         setUser(null);
         clearLocal();
-      } else if (e instanceof TypeError && 'syncNow' in db) {
+        setOffline(false);
+      } else if ((e instanceof TypeError || ['server_error', 'db_error'].includes((e as { code?: string })?.code ?? '')) && 'syncNow' in db) {
         // Sin internet: usa la última copia guardada en este equipo
         try {
           const raw = localStorage.getItem('kalory-server-v1');
@@ -202,10 +209,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               setSyncPending(pendingCount(uid));
               // mantiene la sesión aparente sin user real
               setUser((u) => u ?? { id: uid, name: sp.profile.name, email: '', provider: 'offline' });
+              setOffline(true);
               return;
             }
           }
         } catch { /* ignore */ }
+        setOffline(true);
         throw e;
       } else throw e;
     }
@@ -358,6 +367,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const resetAll = async () => {
     await db.resetAll();
+    try { clearLocalUserData(); } catch { /* sin localStorage */ }
     clearLocal();
   };
 
@@ -385,7 +395,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         achievements, achievementDates, activeDays,
         consumed, proteinEaten, carbsEaten, fatEaten,
         celebration, dismissCelebration,
-        serverUrl, setServerUrl, useOfficialServer,
+        serverUrl, setServerUrl, useOfficialServer, offline,
         register, login, googleSignIn, logout,
         completeOnboarding, refresh, logFood, deleteFood, logWater, toggleExercise, resetAll, unlockMedal,
         history, weights, streak, weekWorkouts, refreshHistory, setWeight, steps, stepsSupported, stepsError, refreshSteps, syncPending, refreshSync,

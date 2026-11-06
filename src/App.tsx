@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { HashRouter, Routes, Route, Navigate, useLocation, NavLink } from 'react-router-dom';
+import { StoreProvider, useStore } from './lib/store';
 import { AnimatePresence, motion } from 'framer-motion';
 import { LayoutDashboard, Dumbbell, Salad, User, TrendingUp, Users, BookOpen } from 'lucide-react';
 import SplashScreen from './components/SplashScreen';
@@ -21,7 +22,7 @@ import { Reminders } from './lib/reminders';
 import { checkUpdate, type VersionInfo } from './lib/report';
 import { DEFAULT_SERVER_URL } from './lib/serverApi';
 import { MEDALS } from './lib/achievements';
-import { Download, X, Medal } from 'lucide-react';
+import { Download, X, Medal, WifiOff } from 'lucide-react';
 
 function MedalToast() {
   const { achievements } = useStore();
@@ -65,6 +66,15 @@ function MedalToast() {
   );
 }
 
+function OfflineBanner() {
+  return (
+    <div role="status" className="no-print mb-3 flex items-start sm:items-center gap-2 rounded-xl border border-fire/40 bg-fire/10 px-4 py-2.5 text-[11px] sm:text-xs text-fire">
+      <WifiOff size={14} className="mt-0.5 sm:mt-0 shrink-0" />
+      <span>Sin conexión con el servidor — estás viendo la última copia guardada en este equipo. Los cambios se enviarán automáticamente al volver la conexión.</span>
+    </div>
+  );
+}
+
 function VersionBanner() {
   const { serverUrl } = useStore();
   const [info, setInfo] = useState<VersionInfo | null>(null);
@@ -74,7 +84,7 @@ function VersionBanner() {
   }, [serverUrl]);
   if (!info || dismissed) return null;
   return (
-    <div className="no-print fixed top-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-xl border border-fire/40 bg-slate-900/90 backdrop-blur px-4 py-2.5 text-xs shadow-glow-fire">
+    <div className="no-print fixed left-1/2 -translate-x-1/2 z-40 flex max-w-[92vw] items-center gap-3 rounded-xl border border-fire/40 bg-slate-900/90 backdrop-blur px-4 py-2.5 text-xs shadow-glow-fire top-3">
       <Download size={15} className="text-fire" />
       <span><b>Nueva versión {info.version}</b> · {info.notes}</span>
       {info.url && <a href={info.url} target="_blank" rel="noreferrer" className="font-bold text-emerald hover:underline">Descargar</a>}
@@ -82,11 +92,9 @@ function VersionBanner() {
     </div>
   );
 }
-import { StoreProvider, useStore } from './lib/store';
-
 function AnimatedRoutes() {
   const location = useLocation();
-  const { user, onboarded, loading, celebration, dismissCelebration } = useStore();
+  const { user, onboarded, loading, celebration, dismissCelebration, offline } = useStore();
 
   if (loading) {
     return <div className="relative flex h-full items-center justify-center text-sm text-muted">Cargando tus datos…</div>;
@@ -119,6 +127,7 @@ function AnimatedRoutes() {
       <VersionBanner />
       <MedalToast />
       <main className="relative min-h-0 flex-1 overflow-y-auto touch-pan-y p-4 md:p-6 pb-48 md:pb-6">
+        {offline && <OfflineBanner />}
         <AnimatePresence mode="wait">
           <Routes location={location} key={location.pathname}>
             <Route path="/" element={<PageTransition><Dashboard /></PageTransition>} />

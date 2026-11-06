@@ -57,7 +57,7 @@ export default function Welcome() {
   };
 
   return (
-    <div className="min-h-full">
+    <main className="min-h-full">
       <div className="mx-auto grid min-h-full max-w-6xl items-center gap-6 px-4 py-6 sm:gap-10 sm:px-6 sm:py-10 lg:grid-cols-2">
         {/* Hero */}
         <motion.div initial={{ opacity: 0, x: -32 }} animate={{ opacity: 1, x: 0 }} transition={{ type: 'spring', stiffness: 120, damping: 20 }}>
@@ -97,19 +97,24 @@ export default function Welcome() {
           </div>
 
           <AnimatePresence mode="wait">
-            <motion.div key={tab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="mt-5 grid gap-3">
+            <motion.form key={tab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="mt-5 grid gap-3"
+              onSubmit={(e) => { e.preventDefault(); void submit(); }}>
               {tab === 'register' && (
-                <input value={name} onChange={(e) => setName(e.target.value)} className="input-kalory text-sm" placeholder="Tu nombre" />
+                <input value={name} onChange={(e) => setName(e.target.value)} name="name" autoComplete="nickname"
+                  required minLength={2} className="input-kalory text-sm" placeholder="Tu nombre" />
               )}
-              <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" className="input-kalory text-sm" placeholder="Correo electrónico" />
+              <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" name="email" required
+                autoComplete="email" autoCapitalize="off" autoCorrect="off" spellCheck={false} inputMode="email"
+                className="input-kalory text-sm" placeholder="Correo electrónico" />
               <input value={password} onChange={(e) => setPassword(e.target.value)} type="password"
-                onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+                name={tab === 'login' ? 'current-password' : 'new-password'} required minLength={6}
+                autoComplete={tab === 'login' ? 'current-password' : 'new-password'}
                 className="input-kalory text-sm" placeholder="Contraseña (mín. 6 caracteres)" />
-              {error && <p className="rounded-xl border border-fire-hot/30 bg-fire-hot/10 px-4 py-2.5 text-xs text-fire">{error}</p>}
-              <motion.button whileTap={{ scale: 0.98 }} onClick={submit} disabled={busy} className="btn-emerald flex items-center justify-center gap-2 text-sm">
+              {error && <p role="alert" className="rounded-xl border border-fire-hot/30 bg-fire-hot/10 px-4 py-2.5 text-xs text-fire">{error}</p>}
+              <motion.button whileTap={{ scale: 0.98 }} type="submit" disabled={busy} className="btn-emerald flex items-center justify-center gap-2 text-sm">
                 {busy ? <Loader2 size={17} className="animate-spin" /> : <>{tab === 'login' ? 'Entrar' : 'Crear mi cuenta'} <ArrowRight size={16} /></>}
               </motion.button>
-            </motion.div>
+            </motion.form>
           </AnimatePresence>
 
           <div className="my-5 flex items-center gap-3 text-[11px] uppercase tracking-widest text-muted">
@@ -126,6 +131,6 @@ export default function Welcome() {
           <p className="mt-5 text-center text-[11px] text-muted">Tu cuenta funciona en todos tus equipos.</p>
         </motion.div>
       </div>
-    </div>
+    </main>
   );
 }

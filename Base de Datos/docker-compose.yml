@@ -5,9 +5,15 @@ services:
       - "3001:3001"
     environment:
       PORT: 3001
-      JWT_SECRET: ${JWT_SECRET:-cambia-este-secreto}
-      ADMIN_TOKEN: ${ADMIN_TOKEN:-kalory-admin-local}
+      # Obligatorios: sin defaults (copia .env.example a .env y rellénalos)
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET requerido — copia .env.example a .env y define uno largo y aleatorio}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN requerido — define uno largo y aleatorio}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-60146882018-1ad06p3sgqlo46ka8s2msm50r2m2durd.apps.googleusercontent.com}
+      # Google login móvil (navegador) y Lector de calorías: sin default, opcionales
+      GOOGLE_WEB_CLIENT_ID: ${GOOGLE_WEB_CLIENT_ID:-}
+      GOOGLE_WEB_CLIENT_SECRET: ${GOOGLE_WEB_CLIENT_SECRET:-}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
     volumes:
       - kalory-data:/srv/data
     restart: unless-stopped

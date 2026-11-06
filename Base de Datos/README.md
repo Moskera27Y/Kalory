@@ -56,7 +56,8 @@ docker compose up -d --build
 Usa un volumen persistente para `/srv/data` o se pierden los datos al redesplegar.
 
 > ⚠️ Cambia `JWT_SECRET` y `ADMIN_TOKEN` en producción. Con los valores de
-> ejemplo cualquiera podría administrar el servidor.
+> Desde 1.6.1 `JWT_SECRET` y `ADMIN_TOKEN` son OBLIGATORIOS:
+> el servidor no arranca sin ellos. No hay valores por defecto.
 
 ## 4. Capacidad: ¿cuántos usuarios aguanta?
 
