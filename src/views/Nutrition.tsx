@@ -163,7 +163,10 @@ export default function Nutrition() {
   const [view, setView] = useState<'diario' | 'menu'>('diario');
   const [q, setQ] = useState('');
   const [meal, setMeal] = useState('Almuerzo');
-  const [custom, setCustom] = useState({ name: '', kcal: '', p: '', c: '', f: '' });
+  const [custom, setCustom] = useState({ name: '' });
+  const [qty, setQty] = useState('100');
+  const [qtyUnit, setQtyUnit] = useState<'g' | 'porcion'>('g');
+  const [qtyGrams, setQtyGrams] = useState('100');
   const [code, setCode] = useState('');
   const [grams, setGrams] = useState('100');
   const [unit, setUnit] = useState<'g' | 'ml' | 'ud'>('g');
@@ -249,18 +252,23 @@ export default function Nutrition() {
 
   const addCustom = async () => {
     if (addingCustom) return;
-    const kcal = Number(custom.kcal);
     if (!custom.name.trim()) return;
-    if (!Number.isFinite(kcal) || kcal <= 0) {
-      setEstimating(true);
-      try {
-        const food = await getDb().estimateFood?.(custom.name.trim());
-        if (food) setConfirmData({ name: custom.name.trim(), kcal: food.kcal, p: food.protein, c: food.carbs, f: food.fat });
-        else setCatMsg('No se pudo estimar. Ingresa las calorías manualmente.');
-      } finally { setEstimating(false); }
-      return;
-    }
-    setConfirmData({ name: custom.name.trim(), kcal: Math.round(kcal), p: Number(custom.p) || 0, c: Number(custom.c) || 0, f: Number(custom.f) || 0 });
+    setEstimating(true);
+    try {
+      const food = await getDb().estimateFood?.(custom.name.trim());
+      if (!food) { setCatMsg('No se pudo estimar. Intenta de nuevo.'); return; }
+      const q = Math.max(1, Number(qty) || 100);
+      const gPerUnit = qtyUnit === 'porcion' ? Math.max(1, Number(qtyGrams) || 100) : 1;
+      const g = qtyUnit === 'porcion' ? q * gPerUnit : q;
+      const k = g / 100;
+      setConfirmData({
+        name: `${custom.name.trim()} (${qtyUnit === 'porcion' ? `${q} porciones` : `${g}g`})`,
+        kcal: Math.round(food.kcal * k),
+        p: Math.round(food.protein * k * 10) / 10,
+        c: Math.round(food.carbs * k * 10) / 10,
+        f: Math.round(food.fat * k * 10) / 10,
+      });
+    } finally { setEstimating(false); }
   };
 
   const confirmAdd = async () => {
@@ -268,7 +276,7 @@ export default function Nutrition() {
     setAddingCustom(true);
     try {
       await logFood({ name: confirmData.name, kcal: confirmData.kcal, protein: confirmData.p, carbs: confirmData.c, fat: confirmData.f, meal });
-      setCustom({ name: '', kcal: '', p: '', c: '', f: '' });
+      setCustom({ name: '' });
       setConfirmData(null);
     } catch { setCatMsg('No se pudo guardar. Revisa tu conexión.'); }
     finally { setAddingCustom(false); }
@@ -408,20 +416,24 @@ export default function Nutrition() {
         <GlassCard glow>
           <p className="text-xs uppercase tracking-widest text-muted">Añadir comida personalizada · {meal}</p>
           <div className="mt-3 grid gap-2">
-            <input value={custom.name} onChange={(e) => setCustom({ ...custom, name: e.target.value })} className="input-kalory text-sm" placeholder="Nombre del plato o alimento" />
-            <div className="grid grid-cols-4 gap-2">
-              <input value={custom.kcal} onChange={(e) => setCustom({ ...custom, kcal: e.target.value })} type="number" min={1} className="input-kalory text-sm" placeholder="kcal *" />
-              <input value={custom.p} onChange={(e) => setCustom({ ...custom, p: e.target.value })} type="number" min={0} className="input-kalory text-sm" placeholder="Prot g" />
-              <input value={custom.c} onChange={(e) => setCustom({ ...custom, c: e.target.value })} type="number" min={0} className="input-kalory text-sm" placeholder="Carb g" />
-              <input value={custom.f} onChange={(e) => setCustom({ ...custom, f: e.target.value })} type="number" min={0} className="input-kalory text-sm" placeholder="Grasa g" />
+            <input value={custom.name} onChange={(e) => setCustom({ name: e.target.value })} className="input-kalory text-sm" placeholder="Nombre del plato o alimento" />
+            <div className="flex gap-2">
+              <input value={qty} onChange={(e) => setQty(e.target.value)} type="number" min={1} className="input-kalory !py-2 text-sm flex-1" placeholder="Cantidad" />
+              <select value={qtyUnit} onChange={(e) => setQtyUnit(e.target.value as 'g' | 'porcion')} className="input-kalory !py-2 text-sm w-28">
+                <option value="g">Gramos</option>
+                <option value="porcion">Porciones</option>
+              </select>
+              {qtyUnit === 'porcion' && (
+                <input value={qtyGrams} onChange={(e) => setQtyGrams(e.target.value)} type="number" min={1} className="input-kalory !py-2 text-sm w-24" placeholder="g/porción" />
+              )}
             </div>
             <div className="flex gap-2">
               <motion.button whileTap={{ scale: 0.97 }} onClick={estimateAI} disabled={estimating || !custom.name.trim()} className="btn-ghost text-sm disabled:opacity-50">
                 {estimating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
               </motion.button>
-              <motion.button whileTap={{ scale: 0.97 }} onClick={addCustom} disabled={addingCustom} className="btn-emerald text-sm disabled:opacity-50 flex-1">{addingCustom ? 'Guardando…' : `Registrar en ${meal}`}</motion.button>
+              <motion.button whileTap={{ scale: 0.97 }} onClick={addCustom} disabled={addingCustom || estimating} className="btn-emerald text-sm disabled:opacity-50 flex-1">{addingCustom || estimating ? 'Calculando…' : `Registrar en ${meal}`}</motion.button>
             </div>
-            <p className="mt-2 text-[11px] text-muted">Solo necesitas nombre y calorías; los macros son opcionales.</p>
+            <p className="mt-2 text-[11px] text-muted">Solo nombre y cantidad. La app calcula los macros con IA.</p>
           </div>
 
           <p className="mt-5 text-xs uppercase tracking-widest text-muted">Código de barras · {meal}</p>
@@ -451,7 +463,7 @@ export default function Nutrition() {
               <input value={manualName} onChange={(e) => setManualName(e.target.value)} className="input-kalory !py-2 text-sm flex-1" placeholder="Nombre del producto (manual)" />
               <motion.button whileTap={{ scale: 0.97 }} onClick={() => {
                 if (!manualName.trim()) return;
-                setCustom({ name: manualName.trim(), kcal: '', p: '', c: '', f: '' });
+                setCustom({ name: manualName.trim() });
                 setView('diario');
               }} className="btn-emerald !py-2 text-sm whitespace-nowrap">Usar</motion.button>
             </div>
