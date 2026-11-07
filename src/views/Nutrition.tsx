@@ -551,7 +551,11 @@ export default function Nutrition() {
 
 function MenuSemanal() {
   const { profile, targets, logFood } = useStore();
-  const [dayIdx, setDayIdx] = useState(0);
+  const [dayIdx, setDayIdx] = useState(() => {
+    const ti = new Date().getDay();
+    return (ti + 6) % 7;
+  });
+  const [tooltipItem, setTooltipItem] = useState<string | null>(null);
   const [added, setAdded] = useState('');
   const [adding, setAdding] = useState<string | null>(null);
   const [addingWeek, setAddingWeek] = useState(false);
@@ -658,11 +662,15 @@ function MenuSemanal() {
         </div>
         <div className="mt-2 flex flex-wrap gap-1.5">
           {list.slice(0, 40).map((l) => (
-            <span key={l.item} className="rounded-lg bg-white/5 border border-white/10 px-2.5 py-1.5 text-[11px]">
+            <button key={l.item} onClick={() => setTooltipItem(tooltipItem === l.item ? null : l.item)}
+              className="rounded-lg bg-white/5 border border-white/10 px-2.5 py-1.5 text-[11px] hover:border-emerald/40">
               {l.item} {l.n > 1 && <b className="text-emerald">×{l.n}</b>}
-            </span>
+            </button>
           ))}
         </div>
+        {tooltipItem && (
+          <p className="mt-2 text-[11px] text-muted">Ingrediente: <b className="text-white">{tooltipItem}</b> — aparece en varias recetas de la semana.</p>
+        )}
       </GlassCard>
 
       <GlassCard>

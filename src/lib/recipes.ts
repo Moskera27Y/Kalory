@@ -48,7 +48,7 @@ export interface DayMenu {
   kcal: number;
 }
 
-export function buildWeekMenu(diet: Diet, mealsPerDay: number, seed = 0, excluded: string[] = []): DayMenu[] {
+export function buildWeekMenu(diet: Diet, mealsPerDay: number, seed = 0, excluded: string[] = [], startDayOffset = 0): DayMenu[] {
   const weekSeed = seed || Math.floor(Date.now() / (7 * 24 * 60 * 60 * 1000));
   const slots = SLOT_ORDER.slice(0, Math.max(1, Math.min(6, mealsPerDay)));
   const ex = excluded.map((x) => x.toLowerCase().trim()).filter(Boolean);
@@ -59,7 +59,11 @@ export function buildWeekMenu(diet: Diet, mealsPerDay: number, seed = 0, exclude
       : base;
     return filtered.length > 0 ? filtered : base.length > 0 ? base : RECIPES.filter((r) => r.meal === meal);
   };
-  const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+  const allDays = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+  const todayIdx = new Date().getDay(); // 0=Sun
+  const mondayIdx = (todayIdx + 6) % 7; // 0=Mon
+  const startIdx = (mondayIdx + startDayOffset) % 7;
+  const days = [...allDays.slice(startIdx), ...allDays.slice(0, startIdx)];
   return days.map((day, d) => {
     const items = slots.map((meal, s) => {
       const list = pool(meal);
@@ -76,7 +80,7 @@ export function shoppingList(menu: DayMenu[]): { item: string; n: number }[] {
     for (const it of d.items) {
       for (const ing of it.recipe.ingredients) {
         // Normaliza: quita cantidad inicial (ej. "avena 70g" -> "avena")
-        const key = ing.replace(/^\S+\s+\d+(\.\d+)?\s*(g|ml|cda|reb|scoop|lata|unidad|ud)?/i, '').trim() || ing.replace(/^\S+\s+\d+/, '').trim() || ing;
+        const key = ing.replace(/\s+\d+(\.\d+)?\s*(g|ml|cda|reb|scoop|lata|unidad|ud|cdas?)?\s*$/i, '').trim() || ing.trim();
         const norm = key.toLowerCase();
         map.set(norm, (map.get(norm) || 0) + 1);
       }
