@@ -1,3 +1,14 @@
+# Kalory API — PRODUCCIÓN en Render (plan free funciona: la BD vive en Neon Postgres,
+# no en el disco efímero del servicio). Antes estaba en free con SQLite en /tmp y la
+# base se borraba en cada reinicio → por eso se cerraba la sesión y se perdían los datos.
+#
+# Requisitos (una sola vez):
+#   1. Crear un proyecto GRATIS en https://neon.tech (Postgres gestionado) y copiar la
+#      "Connection string" (postgresql://…@…neon.tech/…?sslmode=require).
+#   2. En Render → Environment: DATABASE_URL = esa cadena. JWT_SECRET/ADMIN_TOKEN fijos.
+#   3. Desplegar. Para importar la base SQLite vieja (7 cuentas locales incluidas):
+#      cd "Base de Datos/server" && DATABASE_URL=... node import-sqlite.js
+# Ver Base de Datos/README.md para los pasos completos.
 services:
   - type: web
     name: kalory-api
@@ -13,10 +24,10 @@ services:
         value: 3001
       - key: PUBLIC_URL
         value: https://kalory-api.onrender.com
-      - key: DATA_FILE
-        value: /tmp/kalory-online.db
+      - key: DATABASE_URL
+        sync: false        # cadena de conexión de Neon (postgresql://...?sslmode=require)
       - key: JWT_SECRET
-        sync: false
+        sync: false        # fijo: si cambia, mueren todos los tokens
       - key: ADMIN_TOKEN
         sync: false
       - key: OPENROUTER_API_KEY

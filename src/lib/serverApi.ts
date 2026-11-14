@@ -7,16 +7,52 @@ import {
   saveProfileShadow, loadAchShadow, applyUnlock,
   saveHistory, loadHistory, saveWeights, loadWeights, flushQueue, saveAchShadow,
 } from './syncQueue';
+import { clearLocalUserData } from './localCleanup';
 
 export { pendingCount };
+
+/** true justo después de invalidar una sesión muerta (token válido pero el
+ *  usuario ya no existe en el servidor, o token rechazado por el servidor).
+ *  El store lo consume para avisar en la pantalla de bienvenida. */
+let sessionExpiredFlag = false;
+/** Lee y resetea el aviso de "sesión cerrada por el servidor". */
+export function consumeSessionExpired(): boolean {
+  const v = sessionExpiredFlag;
+  sessionExpiredFlag = false;
+  return v;
+}
+
+/** La sesión guardada ya no es válida en el servidor: el JWT expiró/fue
+ *  revocado, o la cuenta desapareció (p. ej. el servidor perdió su base de
+ *  datos). Se limpia el token muerto.
+ *  Con `wipeLocal` además se borra la sombra/cola offline local: solo cuando
+ *  la cuenta YA NO EXISTE, para no reciclar datos locales en una cuenta
+ *  nueva que reutilice el mismo id tras un borrado del servidor. */
+function dropDeadSession(wipeLocal: boolean) {
+  sessionExpiredFlag = true;
+  try { clearServerSession(); } catch { /* ignore */ }
+  if (wipeLocal) {
+    // fasting/sleep/photos/shadows/cola quedan obsoletos: pertenecían a una cuenta que ya no existe
+    try { clearLocalUserData(); } catch { /* ignore */ }
+  }
+}
 
 /** Sesión del servidor online (URL + JWT) guardada en este equipo. */
 const LS_KEY = 'kalory-server-v1';
 
 /** Servidor oficial: la app se conecta sola sin pedir nada al usuario.
- *  Se rellena con la URL real al desplegar el servidor (https://...).
- *  Vacío = modo local (datos solo en este equipo). */
-export const DEFAULT_SERVER_URL = 'https://kalory-api.onrender.com';
+ *  Producción: Render (plan free) con datos en Neon PostgreSQL — el disco de
+ *  Render es efímero, pero la base vive en Neon, así nada se pierde al
+ *  reiniciar ni al redespliegue (ver Base de Datos/README.md).
+ *  Se puede sobreescribir al compilar con VITE_SERVER_URL=https://mi-api.onrender.com npm run build — así no hace
+ *  falta tocar el código al migrar de servidor. */
+export const DEFAULT_SERVER_URL = (import.meta.env?.VITE_SERVER_URL || '').trim() || 'https://kalory-api.onrender.com';
+
+/** URLs retiradas (servidores cuyas bases ya no existen y cuya dirección debe
+ *  migrar automáticamente al servidor oficial vigente). Vacía a propósito:
+ *  kalory-api.onrender.com vuelve a ser el servidor oficial. Si en el futuro se
+ *  retira un host, añádelo aquí y las apps migran solas con un nuevo login. */
+const RETIRED_SERVER_URLS: string[] = [];
 
 export function loadServerUrl(): string {
   try {
@@ -26,6 +62,15 @@ export function loadServerUrl(): string {
       if (s === '') return s; // '' = forzado a local
       // Auto-migración: URLs viejas de desarrollo (localhost) → servidor oficial
       if (/localhost|127\.0\.0\.1/i.test(s)) {
+        localStorage.removeItem(LS_KEY);
+        return DEFAULT_SERVER_URL;
+      }
+      // Auto-migración: host retirado → servidor oficial vigente (token incluido,
+      // la sesión vieja apunta a una BD que ya no existe).
+      const norm = (u: string) => u.trim().replace(/\/+$/, '').toLowerCase();
+      if (DEFAULT_SERVER_URL
+          && RETIRED_SERVER_URLS.some((r) => norm(r) === norm(s))
+          && norm(s) !== norm(DEFAULT_SERVER_URL)) {
         localStorage.removeItem(LS_KEY);
         return DEFAULT_SERVER_URL;
       }
@@ -116,7 +161,23 @@ export class ServerDb implements DbApi {
       }
       return { user: d.user, profile: d.profile, targets: d.targets, achievements: d.achievements };
     } catch (e) {
-      if ((e as { code?: string })?.code === 'no_token' || (e as { code?: string })?.code === 'token_invalido') {
+      const code = (e as { code?: string })?.code;
+      // no_token = no había sesión que invalidar (instalación nueva o servidor
+      //             elegido sin login): NO borres datos locales ni alertes.
+      // token_invalido = tenías token pero el servidor lo rechazó (expiró/cambió
+      //             el secreto): la cuenta puede seguir existiendo; conserva la sombra.
+      // no_user = el JWT es válido pero la cuenta ya NO existe en el servidor
+      //             (pasa si la BD del servidor se reinicia/pierde): limpia todo.
+      if (code === 'no_token') {
+        try { clearServerSession(); } catch { /* ignore */ }
+        return { user: null, profile: null, targets: null, achievements: [] };
+      }
+      if (code === 'token_invalido') {
+        dropDeadSession(false);
+        return { user: null, profile: null, targets: null, achievements: [] };
+      }
+      if (code === 'no_user') {
+        dropDeadSession(true);
         return { user: null, profile: null, targets: null, achievements: [] };
       }
       throw e;

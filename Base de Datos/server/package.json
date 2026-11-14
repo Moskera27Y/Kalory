@@ -2,14 +2,16 @@
   "name": "kalory-server",
   "private": true,
   "version": "1.0.0",
-  "description": "Kalory API online — autenticación y datos centrales",
+  "description": "Kalory API online - autenticación y datos centrales (PostgreSQL/Neon)",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "import:sqlite": "node import-sqlite.js"
   },
   "dependencies": {
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
+    "pg": "^8.23.1",
     "sql.js": "^1.14.2"
   }
 }

@@ -6,12 +6,14 @@ contra una base de datos central en internet, además del modo local (SQLite en 
 ```
 Base de Datos/
 ├── server/
-│   ├── index.js      → API online (Express + SQLite + JWT + login con Google)
-│   ├── admin.html    → Panel gráfico: usuarios registrados e información
+│   ├── index.js        → API online (Express + PostgreSQL + JWT + login con Google)
+│   ├── db.js           → conexión y esquema PostgreSQL (se crea solo, idempotente)
+│   ├── import-sqlite.js→ migra un kalory-online.db viejo a PostgreSQL (idempotente)
+│   ├── admin.html      → Panel gráfico: usuarios registrados e información
 │   ├── package.json
-│   └── data/         → se crea solo: kalory-online.db (archivo de datos)
-├── schema.sql            → esquema SQLite (referencia y app local)
-├── postgres-schema.sql   → esquema para migrar cuando se agote SQLite
+│   └── data/           → SOLO SQLite local antigua (kalory-online.db) + backups .bak
+├── schema.sql            → esquema SQLite histórico (referencia)
+├── postgres-schema.sql   → copia del esquema PostgreSQL (referencia; lo crea db.js)
 ├── Dockerfile + docker-compose.yml
 ├── .env.example
 └── README.md (este archivo)
@@ -28,66 +30,54 @@ Base de Datos/
 
 ## 2. Puertos y firewall
 
-- Puerto por defecto: **3001** (variable `PORT`). Abrirlo donde se hospede:
-  - Windows: `netsh advfirewall firewall add rule name="Kalory Server" dir=in action=allow protocol=TCP localport=3001`
-  - Linux (ufw): `sudo ufw allow 3001/tcp`
-- En producción se recomienda un proxy inverso con HTTPS (Nginx/Caddy) delante
-  y exponer solo 443. La app acepta `https://...` igual que `http://...`.
+- Puerto por defecto: **3001** (variable `PORT`). En Render se asigna solo (respeta `PORT`).
+- En producción Render da HTTPS automáticamente; para un VPS propio se recomienda un proxy inverso con HTTPS (Nginx/Caddy) delante y exponer solo 443.
 
 ## 3. Puesta en marcha
+
+**Configuración (una vez):** los datos viven en un **PostgreSQL externo y gratuito (Neon)**.
+Render/Docker NO guarda nada en disco — por eso la base nunca se pierde al reiniciar:
+
+1. Crea una cuenta gratis en https://neon.tech → **New Project** → región la más cercana.
+2. Copia la **Connection string** (formato `postgresql://usuario:clave@ep-xxxx.neon.tech/…?sslmode=require`).
+3. Defínela como `DATABASE_URL` en el entorno del servidor (ver tabla abajo).
 
 **Local (pruebas):**
 ```bash
 cd "Base de Datos/server"
 npm install
-set ADMIN_TOKEN=tu-clave & set JWT_SECRET=texto-largo & node index.js
+set DATABASE_URL=postgresql://... & set JWT_SECRET=texto-largo & set ADMIN_TOKEN=tu-clave & node index.js
 ```
 Panel: http://localhost:3001/admin · Salud: http://localhost:3001/api/health
 
-**Docker (VPS propio):**
-```bash
-cd "Base de Datos"
-# crea un .env a partir de .env.example con tus secretos
-docker compose up -d --build
-```
+**Nube (Render — producción, plan FREE funciona):**
+1. Render → New Web Service desde el repo (o toma el `render.yaml` de la raíz, que ya trae `plan: free` y healthcheck `/api/health`).
+2. **Environment**: `DATABASE_URL` = la cadena de Neon (marcar "sync:false" / secreto), más `JWT_SECRET`, `ADMIN_TOKEN`, `GOOGLE_*`, `OPENROUTER_API_KEY`.
+3. Desplegar. Primera vez: la base queda creada sola (tablas idempotentes en `db.js`).
+4. **Importar la base SQLite antigua** (si quieres conservar las cuentas locales ya creadas):
+   ```bash
+   cd "Base de Datos/server"
+   DATABASE_URL=postgresql://... node import-sqlite.js    # usa data/kalory-online.db por defecto
+   ```
+   Es idempotente: se puede repetir sin duplicados. Conserva los ids de usuario,
+   así los JWT antiguos siguen valiendo con el mismo `JWT_SECRET`.
+5. Si alguna vez migras de servidor, basta con cambiar `DATABASE_URL`: la app no depende del host.
 
-**Nube (Railway / Render / similar):** sube esta carpeta, define las variables
-`JWT_SECRET`, `ADMIN_TOKEN`, `GOOGLE_CLIENT_ID` y el puerto que te asignen.
-Usa un volumen persistente para `/srv/data` o se pierden los datos al redesplegar.
+> ⚠️ JWT_SECRET es la llave de todas las sesiones: fijo en producción. Si cambia,
+> todos los usuarios deben entrar de nuevo (los datos NO se pierden — siguen en Neon).
+> ⚠️ Desde 1.6.1 `JWT_SECRET` y `ADMIN_TOKEN` son OBLIGATORIOS: el servidor no arranca sin ellos.
+> ⚠️ No existe `DATA_FILE`: si la ruta del archivo vuelve a aparecer, el servidor lo ignora.
 
-> ⚠️ Cambia `JWT_SECRET` y `ADMIN_TOKEN` en producción. Con los valores de
-> Desde 1.6.1 `JWT_SECRET` y `ADMIN_TOKEN` son OBLIGATORIOS:
-> el servidor no arranca sin ellos. No hay valores por defecto.
+**Nota:** el plan free de Render duerme tras ~15 min sin tráfico y tarda ~30–60 s
+en despertar. No pierde datos (todo está en Neon); solo es una espera inicial.
+Si quieres evitarla, un ping externo (p. ej. UptimeRobot → `/api/health`) lo mantiene despierto.
 
 ## 4. Capacidad: ¿cuántos usuarios aguanta?
 
-El servidor guarda todo en **un archivo SQLite** (`data/kalory-online.db`).
-Límites teóricos de SQLite: 281 TB por base y hasta 2⁶⁴ filas — en la práctica
-mandan la **RAM** (sql.js carga la base completa en memoria) y que las
-escrituras se atienden en serie.
-
-Consumo típico por usuario:
-| Dato | Tamaño aprox. |
-|---|---|
-| Cuenta + perfil + metas | ~2 KB (una vez) |
-| Día activo (5 comidas + agua + ejercicios) | ~2.5 KB/día |
-| 1 usuario activo 1 año | ~1 MB/año |
-
-| Escala | Archivo aprox. | Estado |
-|---|---|---|
-| 100 usuarios | ~10–100 MB | ✅ sobrado |
-| 1.000 usuarios | ~0.1–1 GB | ✅ cómodo |
-| **~10.000 usuarios** | ~1–10 GB | ✅ **máximo recomendado en SQLite** |
-| 100.000+ | decenas de GB en RAM | ❌ migrar a PostgreSQL |
-
-**Respuesta corta: hasta ~10.000 cuentas en esta configuración.**
-Miles de usuarios concurrentes no son problema (cada petición tarda
-milisegundos y el uso real son unas pocas escrituras por persona al día);
-el techo lo pone la memoria RAM del servidor.
-
-**Para más:** usa `postgres-schema.sql` (mismo modelo en PostgreSQL) y cambia
-la capa de datos: con Postgres el límite pasa a ser tu disco/servidor,
-es decir, **cientos de miles a millones de usuarios**.
+Los datos están en **PostgreSQL (Neon)**: almacenamiento gestionado, plan gratuito
+≈0.5 GB (decenas de miles de cuentas: ~1 MB por usuario activo al año).
+~10.000 cuentas activas ≈ 10 GB o menos — pasar al plan de pago de Neon cuando
+se necesite; sin cambios de código.
 
 ## 5. Panel de administración
 

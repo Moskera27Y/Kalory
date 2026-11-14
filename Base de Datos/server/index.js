@@ -4,172 +4,41 @@
  * - Registro / login local (scrypt + JWT) y login con Google (verifica idToken).
  * - Perfil, diario (comidas/agua/ejercicio), logros y estadísticas por usuario.
  * - Panel admin en GET /admin (protegido con ADMIN_TOKEN).
+ * - Datos en PostgreSQL gestionado (Neon): la base NO se pierde al reiniciar
+ *   el servicio en Render free (antes era SQLite en /tmp efímero → bug de
+ *   "sesión cerrada y datos borrados" en iPhone/Android).
  *
- * Variables de entorno (.env): PORT, JWT_SECRET, ADMIN_TOKEN,
- * GOOGLE_CLIENT_ID, DATA_FILE. Ver ../.env.example
+ * Variables de entorno (.env): PORT, JWT_SECRET, ADMIN_TOKEN, DATABASE_URL,
+ * (opcional) GOOGLE_*, PUBLIC_URL, OPENROUTER_API_KEY, PGSSL. Ver ../.env.example
  */
 const express = require('express');
 const crypto = require('crypto');
-const fs = require('fs');
 const path = require('path');
 const jwt = require('jsonwebtoken');
-const initSqlJs = require('sql.js');
+const { ready, q, q1, run } = require('./db');
 
 const PORT = Number(process.env.PORT || 3001);
 // Secretos OBLIGATORIOS: sin valores por defecto, cualquiera podría forjar tokens.
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
 if (!JWT_SECRET || !ADMIN_TOKEN) {
-  console.error('[config] FALTAN JWT_SECRET y/o ADMIN_TOKEN. Defínelos en el entorno (ver .env.example / Railway Variables).');
+  console.error('[config] FALTAN JWT_SECRET y/o ADMIN_TOKEN. Defínelos en el entorno (ver .env.example / Render Variables).');
   process.exit(1);
 }
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '60146882018-1ad06p3sgqlo46ka8s2msm50r2m2durd.apps.googleusercontent.com';
 // Cliente tipo Web (solo para el login móvil vía navegador). Si no se define, se usa el de escritorio.
 const GOOGLE_WEB_CLIENT_ID = process.env.GOOGLE_WEB_CLIENT_ID || '';
 const GOOGLE_WEB_CLIENT_SECRET = process.env.GOOGLE_WEB_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET || '';
-// En Railway monta un volumen en /srv/data y define DATA_FILE=/srv/data/kalory-online.db.
-// Si el directorio existe se usa solo (evita perder datos al redesplegar).
-const DATA_FILE = process.env.DATA_FILE || ((() => {
-  try {
-    const cand = '/srv/data/kalory-online.db';
-    require('fs').mkdirSync(require('path').dirname(cand), { recursive: true });
-    return cand;
-  } catch { return path.join(__dirname, 'data', 'kalory-online.db'); }
-})());
-
-
-let SQL = null;
-let db = null;
-
-async function init() {
-  if (db) return db;
-  if (!SQL) {
-    SQL = await initSqlJs({ locateFile: (f) => path.join(__dirname, 'node_modules', 'sql.js', 'dist', f) });
-  }
-  fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
-  let data = null;
-  try { data = fs.readFileSync(DATA_FILE); } catch { data = null; }
-  db = data ? new SQL.Database(data) : new SQL.Database();
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS users(
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      email TEXT NOT NULL UNIQUE COLLATE NOCASE,
-      pwd_hash TEXT,
-      pwd_salt TEXT,
-      google_sub TEXT UNIQUE,
-      provider TEXT NOT NULL DEFAULT 'local',
-      created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS user_profile(
-      user_id INTEGER PRIMARY KEY,
-      profile_json TEXT NOT NULL,
-      targets_json TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS food_log(
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      date TEXT NOT NULL,
-      name TEXT NOT NULL,
-      kcal REAL NOT NULL DEFAULT 0,
-      protein REAL NOT NULL DEFAULT 0,
-      carbs REAL NOT NULL DEFAULT 0,
-      fat REAL NOT NULL DEFAULT 0,
-      meal TEXT NOT NULL DEFAULT 'extra',
-      created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS water_log(
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      date TEXT NOT NULL,
-      ml INTEGER NOT NULL,
-      created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS workout_log(
-      user_id INTEGER NOT NULL,
-      date TEXT NOT NULL,
-      exercise TEXT NOT NULL,
-      PRIMARY KEY(user_id, date, exercise)
-    );
-    CREATE TABLE IF NOT EXISTS achievement(
-      user_id INTEGER NOT NULL,
-      id TEXT NOT NULL,
-      unlocked_at TEXT NOT NULL,
-      PRIMARY KEY(user_id, id)
-    );
-    CREATE TABLE IF NOT EXISTS weight_log(
-      user_id INTEGER NOT NULL,
-      date TEXT NOT NULL,
-      weight REAL NOT NULL,
-      created_at TEXT NOT NULL,
-      PRIMARY KEY(user_id, date)
-    );
-    CREATE TABLE IF NOT EXISTS friendships(
-      user_id INTEGER NOT NULL,
-      friend_id INTEGER NOT NULL,
-      created_at TEXT NOT NULL,
-      PRIMARY KEY(user_id, friend_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_food_user_date ON food_log(user_id, date);
-    CREATE INDEX IF NOT EXISTS idx_water_user_date ON water_log(user_id, date);
-  `);
-  // Migración única: código de invitación aleatorio (antes se derivaba del id → enumerable)
-  try { db.exec('ALTER TABLE users ADD COLUMN invite_code TEXT'); } catch { /* ya existe */ }
-  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite_code ON users(invite_code)');
-  const missing = rows('SELECT id FROM users WHERE invite_code IS NULL');
-  for (const r of missing) {
-    run('UPDATE users SET invite_code=? WHERE id=?', [genInviteCode(), r.id]);
-  }
-  if (missing.length) persist();
-  return db;
-}
-let readyP = null;
-function ready() {
-  if (!readyP) readyP = init().catch((e) => { readyP = null; throw e; });
-  return readyP;
-}
-
-function persist() {
-  // Escritura atómica: tmp + rename (un corte a mitad no corrompe la BD).
-  // Lanza en caso de error: la ruta responde 500 y el log queda claro (antes mentalmente "ok" con la BD rota).
-  const tmp = DATA_FILE + '.tmp';
-  try {
-    const buf = Buffer.from(db.export());
-    const fd = fs.openSync(tmp, 'w');
-    try { fs.writeSync(fd, buf); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
-    if (fs.existsSync(DATA_FILE)) fs.copyFileSync(DATA_FILE, DATA_FILE + '.bak');
-    fs.renameSync(tmp, DATA_FILE);
-  } catch (e) {
-    try { fs.unlinkSync(tmp); } catch { /* ignorar */ }
-    console.error('[db] NO se pudo guardar la base de datos:', e.message);
-    throw Object.assign(new Error('[db] ' + e.message), { code: 'db_error' });
-  }
-}
-
-function rows(sql, params = []) {
-  const st = db.prepare(sql);
-  try {
-    st.bind(params);
-    const out = [];
-    while (st.step()) out.push(st.getAsObject());
-    return out;
-  } finally { st.free(); }
-}
-function run(sql, params = []) {
-  const st = db.prepare(sql);
-  try { st.bind(params); st.step(); } finally { st.free(); }
-}
-
 const now = () => new Date().toISOString();
 const pub = (r) => ({ id: r.id, name: r.name, email: r.email, provider: r.provider || 'local' });
 /** Lo que se expone a OTROS usuarios (amigos/ranking): jamás el email. */
 const pubPublic = (r) => ({ id: r.id, name: r.name, provider: r.provider || 'local' });
 const INVITE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // sin 0/O ni 1/I/L
-function genInviteCode() {
+async function genInviteCode() {
   for (let i = 0; i < 30; i++) {
     let code = 'KAL-';
     for (const b of crypto.randomBytes(6)) code += INVITE_ALPHABET[b % INVITE_ALPHABET.length];
-    if (!rows('SELECT 1 AS ok FROM users WHERE invite_code=?', [code]).length) return code;
+    if (!(await q1('SELECT 1 AS ok FROM users WHERE invite_code=$1', [code]))) return code;
   }
   throw new Error('invite_code_agotado');
 }
@@ -197,15 +66,24 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000).unref?.();
 
-function auth(req, res, next) {
+async function auth(req, res, next) {
   const h = req.headers.authorization || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
   if (!token) return res.status(401).json({ ok: false, error: 'no_token' });
   try {
     req.uid = jwt.verify(token, JWT_SECRET).uid;
+  } catch {
+    return res.status(401).json({ ok: false, error: 'token_invalido' });
+  }
+  try {
+    await ready(); // la BD debe estar lista antes de comprobar la cuenta
+    // Defensa en profundidad: un JWT válido no basta si la cuenta ya no existe.
+    if (!(await q('SELECT 1 AS ok FROM users WHERE id=$1', [req.uid])).length) {
+      return res.status(401).json({ ok: false, error: 'no_user' });
+    }
     next();
   } catch {
-    res.status(401).json({ ok: false, error: 'token_invalido' });
+    res.status(500).json({ ok: false, error: 'db_error' });
   }
 }
 function adminOnly(req, res, next) {
@@ -226,7 +104,7 @@ async function verifyGoogleIdToken(idToken) {
 }
 
 const app = express();
-app.set('trust proxy', 1); // en Railway/Cloudflare la IP llega vía X-Forwarded-For
+app.set('trust proxy', 1); // en Render/Cloudflare la IP llega vía X-Forwarded-For
 app.disable('x-powered-by');
 // Fotos base64 (~2.5MB de tope en /api/food/analyze) + margen: 4mb
 app.use(express.json({ limit: '4mb' }));
@@ -245,10 +123,8 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
-
 // ---------- auth ----------
 app.post('/api/auth/register', async (req, res) => {
-  await ready();
   if (!rateLimit('reg:' + req.ip, 8, 10 * 60 * 1000)) {
     return res.status(429).json({ ok: false, error: 'demasiados_intentos' });
   }
@@ -258,24 +134,21 @@ app.post('/api/auth/register', async (req, res) => {
   if (name.length < 2) return res.status(400).json({ ok: false, error: 'nombre_corto' });
   if (!validEmail(email)) return res.status(400).json({ ok: false, error: 'email_invalido' });
   if (password.length < 6) return res.status(400).json({ ok: false, error: 'clave_corta' });
-  if (rows('SELECT 1 AS ok FROM users WHERE email=?', [email]).length) {
+  if (await q1('SELECT 1 AS ok FROM users WHERE email=$1', [email])) {
     return res.status(409).json({ ok: false, error: 'email_en_uso' });
   }
   const salt = crypto.randomBytes(16).toString('hex');
-  run('INSERT INTO users(name,email,pwd_hash,pwd_salt,provider,created_at) VALUES(?,?,?,?,?,?)',
+  const u = await q1('INSERT INTO users(name,email,pwd_hash,pwd_salt,provider,created_at) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',
     [name, email, hashPw(password, salt), salt, 'local', now()]);
-  const u = rows('SELECT * FROM users WHERE email=?', [email])[0];
-  persist();
   res.json({ ok: true, token: sign(u.id), user: pub(u) });
 });
 
 app.post('/api/auth/login', async (req, res) => {
-  await ready();
   if (!rateLimit('login:' + req.ip + ':' + String(req.body.email || '').toLowerCase(), 12, 10 * 60 * 1000)) {
     return res.status(429).json({ ok: false, error: 'demasiados_intentos' });
   }
   const email = String(req.body.email || '').trim().toLowerCase();
-  const u = rows('SELECT * FROM users WHERE email=?', [email])[0];
+  const u = await q1('SELECT * FROM users WHERE email=$1', [email]);
   if (!u || !u.pwd_hash || hashPw(req.body.password || '', u.pwd_salt) !== u.pwd_hash) {
     return res.status(401).json({ ok: false, error: 'credenciales' });
   }
@@ -283,14 +156,12 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 app.post('/api/auth/google', async (req, res) => {
-  await ready();
   if (!rateLimit('g:' + req.ip, 20, 10 * 60 * 1000)) {
     return res.status(429).json({ ok: false, error: 'demasiados_intentos' });
   }
   try {
     const g = await verifyGoogleIdToken(String(req.body.idToken || ''));
     const u = await findOrCreateGoogleUser(g);
-    persist();
     res.json({ ok: true, token: sign(u.id), user: pub(u) });
   } catch (e) {
     res.status(401).json({ ok: false, error: 'google_invalido' });
@@ -298,16 +169,15 @@ app.post('/api/auth/google', async (req, res) => {
 });
 
 async function findOrCreateGoogleUser(g) {
-  let u = rows('SELECT * FROM users WHERE google_sub=?', [g.sub])[0];
+  let u = await q1('SELECT * FROM users WHERE google_sub=$1', [g.sub]);
   if (!u) {
-    const byEmail = rows('SELECT * FROM users WHERE email=?', [g.email.toLowerCase()])[0];
+    const byEmail = await q1('SELECT * FROM users WHERE email=$1', [g.email.toLowerCase()]);
     if (byEmail) {
-      run('UPDATE users SET google_sub=? WHERE id=?', [g.sub, byEmail.id]);
-      u = rows('SELECT * FROM users WHERE id=?', [byEmail.id])[0];
+      await run('UPDATE users SET google_sub=$1 WHERE id=$2', [g.sub, byEmail.id]);
+      u = await q1('SELECT * FROM users WHERE id=$1', [byEmail.id]);
     } else {
-      run('INSERT INTO users(name,email,google_sub,provider,created_at) VALUES(?,?,?,?,?)',
+      u = await q1('INSERT INTO users(name,email,google_sub,provider,created_at) VALUES($1,$2,$3,$4,$5) RETURNING *',
         [g.name, g.email.toLowerCase(), g.sub, 'google', now()]);
-      u = rows('SELECT * FROM users WHERE google_sub=?', [g.sub])[0];
     }
   }
   return u;
@@ -332,7 +202,6 @@ setInterval(() => {
 }, 60 * 1000).unref?.();
 
 app.post('/api/auth/google/start', async (req, res) => {
-  await ready();
   const base = publicBase();
   const webId = GOOGLE_WEB_CLIENT_ID || GOOGLE_CLIENT_ID;
   if (!base) return res.status(500).json({ ok: false, error: 'sin_public_url' });
@@ -350,7 +219,6 @@ app.post('/api/auth/google/start', async (req, res) => {
 });
 
 app.get('/api/auth/google/callback', async (req, res) => {
-  await ready();
   const page = (title, msg) => res.send(
     `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>` +
     `<body style="font-family:sans-serif;background:#0A0F1E;color:#F3F4F6;text-align:center;padding:15vh 20px;margin:0">` +
@@ -358,7 +226,7 @@ app.get('/api/auth/google/callback', async (req, res) => {
   );
   const { code, state } = req.query;
   const pend = pendingGoogle.get(String(state || ''));
-  if (!pend) return page('Enlace expirado', 'Vuelve a Kalory y pulsa de nuevo “Continuar con Google”.');
+  if (!pend) return page('Enlace expirado', 'Vuelve a Kalory y pulsa de nuevo "Continuar con Google".');
   if (!code) {
     pendingGoogle.delete(String(state));
     return page('Acceso cancelado', 'Vuelve a Kalory e inténtalo de nuevo.');
@@ -387,8 +255,7 @@ app.get('/api/auth/google/callback', async (req, res) => {
     const u = await findOrCreateGoogleUser(g);
     pend.token = sign(u.id);
     pend.user = pub(u);
-    persist();
-    return page('¡Listo! 🎉', 'Ya puedes volver a Kalory: tu sesión está iniciada.');
+    return page('¡Listo!', 'Ya puedes volver a Kalory: tu sesión está iniciada.');
   } catch (e) {
     pendingGoogle.delete(String(state));
     return page('No se pudo completar', 'Vuelve a Kalory e inténtalo de nuevo. (' + (e.message || 'error') + ')');
@@ -409,6 +276,7 @@ app.get('/api/auth/google/poll', async (req, res) => {
   }
   return res.json({ ok: true, pending: true });
 });
+
 
 // ---------- lector de calorías (solo móvil): foto → análisis con IA gratuita ----------
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
@@ -496,46 +364,6 @@ app.post('/api/food/analyze', auth, async (req, res) => {
   }
 });
 
-// ---------- datos del usuario ----------
-app.get('/api/bootstrap', auth, async (req, res) => {
-  await ready();
-  const date = String(req.query.date || now().slice(0, 10));
-  const u = rows('SELECT * FROM users WHERE id=?', [req.uid])[0];
-  if (!u) return res.status(401).json({ ok: false, error: 'no_user' });
-  const p = rows('SELECT profile_json, targets_json FROM user_profile WHERE user_id=?', [req.uid])[0];
-  const foods = rows('SELECT * FROM food_log WHERE user_id=? AND date=? ORDER BY id', [req.uid, date]);
-  const w = rows('SELECT COALESCE(SUM(ml),0) AS total FROM water_log WHERE user_id=? AND date=?', [req.uid, date])[0];
-  const done = rows('SELECT exercise FROM workout_log WHERE user_id=? AND date=?', [req.uid, date]).map((r) => r.exercise);
-  const totalFoods = rows('SELECT COUNT(*) AS n FROM food_log WHERE user_id=?', [req.uid])[0].n;
-  const days = rows(`SELECT COUNT(*) AS n FROM (
-    SELECT date FROM food_log WHERE user_id=?
-    UNION SELECT date FROM water_log WHERE user_id=? AND ml > 0
-    UNION SELECT date FROM workout_log WHERE user_id=?)`, [req.uid, req.uid, req.uid])[0].n;
-  res.json({
-    ok: true,
-    user: pub(u),
-    profile: p ? JSON.parse(p.profile_json) : null,
-    targets: p ? JSON.parse(p.targets_json) : null,
-    achievements: rows('SELECT id, unlocked_at FROM achievement WHERE user_id=? ORDER BY unlocked_at', [req.uid]),
-    day: { date, foods, waterMl: Math.max(0, w.total), done },
-    stats: { totalFoods, activeDays: days },
-  });
-});
-
-app.put('/api/profile', auth, async (req, res) => {
-  await ready();
-  const pj = JSON.stringify(req.body.profile ?? null);
-  const tj = JSON.stringify(req.body.targets ?? null);
-  if (pj.length > 20000 || tj.length > 20000) {
-    return res.status(400).json({ ok: false, error: 'perfil_grande' });
-  }
-  run(`INSERT INTO user_profile(user_id, profile_json, targets_json) VALUES(?,?,?)
-       ON CONFLICT(user_id) DO UPDATE SET profile_json=excluded.profile_json, targets_json=excluded.targets_json`,
-    [req.uid, pj, tj]);
-  persist();
-  res.json({ ok: true });
-});
-
 app.post('/api/food/estimate', auth, async (req, res) => {
   try {
     const name = String(req.body?.name || '').trim();
@@ -577,100 +405,122 @@ app.post('/api/food/estimate', auth, async (req, res) => {
 });
 
 
+// ---------- datos del usuario ----------
+app.get('/api/bootstrap', auth, async (req, res) => {
+  const date = String(req.query.date || now().slice(0, 10));
+  const u = await q1('SELECT * FROM users WHERE id=$1', [req.uid]);
+  if (!u) return res.status(401).json({ ok: false, error: 'no_user' });
+  const p = await q1('SELECT profile_json, targets_json FROM user_profile WHERE user_id=$1', [req.uid]);
+  const foods = await q('SELECT * FROM food_log WHERE user_id=$1 AND date=$2 ORDER BY id', [req.uid, date]);
+  const w = await q1('SELECT COALESCE(SUM(ml),0)::int AS total FROM water_log WHERE user_id=$1 AND date=$2', [req.uid, date]);
+  const done = (await q('SELECT exercise FROM workout_log WHERE user_id=$1 AND date=$2', [req.uid, date])).map((r) => r.exercise);
+  const totalFoods = (await q1('SELECT COUNT(*)::int AS n FROM food_log WHERE user_id=$1', [req.uid])).n;
+  const days = (await q1(`SELECT COUNT(*)::int AS n FROM (
+    SELECT date FROM food_log WHERE user_id=$1
+    UNION SELECT date FROM water_log WHERE user_id=$1 AND ml > 0
+    UNION SELECT date FROM workout_log WHERE user_id=$1)`, [req.uid])).n;
+  res.json({
+    ok: true,
+    user: pub(u),
+    profile: p ? JSON.parse(p.profile_json) : null,
+    targets: p ? JSON.parse(p.targets_json) : null,
+    achievements: await q('SELECT id, unlocked_at FROM achievement WHERE user_id=$1 ORDER BY unlocked_at', [req.uid]),
+    day: { date, foods, waterMl: Math.max(0, w.total), done },
+    stats: { totalFoods, activeDays: days },
+  });
+});
+
+app.put('/api/profile', auth, async (req, res) => {
+  const pj = JSON.stringify(req.body.profile ?? null);
+  const tj = JSON.stringify(req.body.targets ?? null);
+  if (pj.length > 20000 || tj.length > 20000) {
+    return res.status(400).json({ ok: false, error: 'perfil_grande' });
+  }
+  await run(`INSERT INTO user_profile(user_id, profile_json, targets_json) VALUES($1,$2,$3)
+       ON CONFLICT(user_id) DO UPDATE SET profile_json=excluded.profile_json, targets_json=excluded.targets_json`,
+    [req.uid, pj, tj]);
+  res.json({ ok: true });
+});
+
+
 app.post('/api/foods', auth, async (req, res) => {
-  await ready();
   const b = req.body || {};
   if (!validDate(b.date)) return res.status(400).json({ ok: false, error: 'fecha_invalida' });
   const kcal = num(b.kcal);
   if (!(kcal > 0 && kcal <= 20000)) return res.status(400).json({ ok: false, error: 'kcal_invalida' });
-  run('INSERT INTO food_log(user_id,date,name,kcal,protein,carbs,fat,meal,created_at) VALUES(?,?,?,?,?,?,?,?,?)',
+  const row = await q1('INSERT INTO food_log(user_id,date,name,kcal,protein,carbs,fat,meal,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id',
     [req.uid, b.date, str(b.name, 120) || 'Comida', Math.round(kcal),
      Math.min(2000, Math.max(0, num(b.protein))), Math.min(5000, Math.max(0, num(b.carbs))),
      Math.min(2000, Math.max(0, num(b.fat))), str(b.meal, 20) || 'extra', now()]);
-  persist();
-  res.json({ ok: true, id: rows('SELECT last_insert_rowid() AS id')[0].id });
+  res.json({ ok: true, id: row.id });
 });
 
 app.delete('/api/foods/:id', auth, async (req, res) => {
-  await ready();
-  run('DELETE FROM food_log WHERE id=? AND user_id=?', [req.params.id, req.uid]);
-  persist();
+  await run('DELETE FROM food_log WHERE id=$1 AND user_id=$2', [req.params.id, req.uid]);
   res.json({ ok: true });
 });
 
 app.post('/api/water', auth, async (req, res) => {
-  await ready();
   if (!validDate(req.body.date)) return res.status(400).json({ ok: false, error: 'fecha_invalida' });
   const ml = Math.round(num(req.body.ml));
   // Se admiten correcciones negativas (p. ej. −250 ml) con el mismo tope en valor absoluto.
   if (!(Number.isFinite(ml) && ml !== 0 && Math.abs(ml) <= 5000)) {
     return res.status(400).json({ ok: false, error: 'cantidad_invalida' });
   }
-  run('INSERT INTO water_log(user_id,date,ml,created_at) VALUES(?,?,?,?)', [req.uid, req.body.date, ml, now()]);
-  persist();
-  const w = rows('SELECT COALESCE(SUM(ml),0) AS total FROM water_log WHERE user_id=? AND date=?', [req.uid, req.body.date])[0];
+  await run('INSERT INTO water_log(user_id,date,ml,created_at) VALUES($1,$2,$3,$4)', [req.uid, req.body.date, ml, now()]);
+  const w = await q1('SELECT COALESCE(SUM(ml),0)::int AS total FROM water_log WHERE user_id=$1 AND date=$2', [req.uid, req.body.date]);
   res.json({ ok: true, total: Math.max(0, w.total) });
 });
 
 app.post('/api/exercises/toggle', auth, async (req, res) => {
-  await ready();
   const date = str(req.body.date, 10);
   const exercise = str(req.body.exercise, 120);
   if (!validDate(date) || !exercise) return res.status(400).json({ ok: false, error: 'dato_invalido' });
-  const ex = rows('SELECT 1 AS ok FROM workout_log WHERE user_id=? AND date=? AND exercise=?', [req.uid, date, exercise]).length > 0;
-  if (ex) run('DELETE FROM workout_log WHERE user_id=? AND date=? AND exercise=?', [req.uid, date, exercise]);
-  else run('INSERT INTO workout_log(user_id,date,exercise) VALUES(?,?,?)', [req.uid, date, exercise]);
-  persist();
+  const ex = (await q('SELECT 1 AS ok FROM workout_log WHERE user_id=$1 AND date=$2 AND exercise=$3', [req.uid, date, exercise])).length > 0;
+  if (ex) await run('DELETE FROM workout_log WHERE user_id=$1 AND date=$2 AND exercise=$3', [req.uid, date, exercise]);
+  else await run('INSERT INTO workout_log(user_id,date,exercise) VALUES($1,$2,$3)', [req.uid, date, exercise]);
   res.json({ ok: true, done: !ex });
 });
 
 app.post('/api/achievements/unlock', auth, async (req, res) => {
-  await ready();
   const id = str(req.body.id, 40);
   if (!id) return res.status(400).json({ ok: false, error: 'dato_invalido' });
   const at = now();
-  run('INSERT INTO achievement(user_id,id,unlocked_at) VALUES(?,?,?) ON CONFLICT(user_id,id) DO NOTHING', [req.uid, id, at]);
-  persist();
+  await run('INSERT INTO achievement(user_id,id,unlocked_at) VALUES($1,$2,$3) ON CONFLICT(user_id,id) DO NOTHING', [req.uid, id, at]);
   res.json({ ok: true, at });
 });
 
 app.delete('/api/account/data', auth, async (req, res) => {
-  await ready();
-  run('DELETE FROM user_profile WHERE user_id=?', [req.uid]);
-  run('DELETE FROM food_log WHERE user_id=?', [req.uid]);
-  run('DELETE FROM water_log WHERE user_id=?', [req.uid]);
-  run('DELETE FROM workout_log WHERE user_id=?', [req.uid]);
-  run('DELETE FROM achievement WHERE user_id=?', [req.uid]);
-  run('DELETE FROM weight_log WHERE user_id=?', [req.uid]);
-  run('DELETE FROM friendships WHERE user_id=? OR friend_id=?', [req.uid, req.uid]);
-  persist();
+  await run('DELETE FROM user_profile WHERE user_id=$1', [req.uid]);
+  await run('DELETE FROM food_log WHERE user_id=$1', [req.uid]);
+  await run('DELETE FROM water_log WHERE user_id=$1', [req.uid]);
+  await run('DELETE FROM workout_log WHERE user_id=$1', [req.uid]);
+  await run('DELETE FROM achievement WHERE user_id=$1', [req.uid]);
+  await run('DELETE FROM weight_log WHERE user_id=$1', [req.uid]);
+  await run('DELETE FROM friendships WHERE user_id=$1 OR friend_id=$1', [req.uid]);
   res.json({ ok: true });
 });
 
 // ---------- peso ----------
 app.post('/api/weight', auth, async (req, res) => {
-  await ready();
   if (!validDate(req.body.date)) return res.status(400).json({ ok: false, error: 'fecha_invalida' });
   const weight = num(req.body.weight);
   if (!(weight > 20 && weight <= 400)) return res.status(400).json({ ok: false, error: 'peso_invalido' });
-  run(`INSERT INTO weight_log(user_id,date,weight,created_at) VALUES(?,?,?,?)
+  await run(`INSERT INTO weight_log(user_id,date,weight,created_at) VALUES($1,$2,$3,$4)
        ON CONFLICT(user_id,date) DO UPDATE SET weight=excluded.weight, created_at=excluded.created_at`,
     [req.uid, req.body.date, Math.round(weight * 10) / 10, now()]);
-  persist();
   res.json({ ok: true });
 });
 
 app.get('/api/weights', auth, async (req, res) => {
-  await ready();
   let { from = '2000-01-01', to = '2999-12-31' } = req.query;
   if (!validDate(from)) from = '2000-01-01';
   if (!validDate(to)) to = '2999-12-31';
-  res.json({ ok: true, weights: rows('SELECT date, weight FROM weight_log WHERE user_id=? AND date>=? AND date<=? ORDER BY date', [req.uid, from, to]) });
+  res.json({ ok: true, weights: await q('SELECT date, weight FROM weight_log WHERE user_id=$1 AND date>=$2 AND date<=$3 ORDER BY date', [req.uid, from, to]) });
 });
 
 // ---------- historial agregado por día (máx 366 días por petición) ----------
 app.get('/api/history', auth, async (req, res) => {
-  await ready();
   let { from = '2000-01-01', to = '2999-12-31' } = req.query;
   if (!validDate(from)) from = '2000-01-01';
   if (!validDate(to)) to = '2999-12-31';
@@ -683,17 +533,17 @@ app.get('/api/history', auth, async (req, res) => {
     if (!days.has(d)) days.set(d, { date: d, kcal: 0, protein: 0, carbs: 0, fat: 0, waterMl: 0, exercises: 0, weight: null });
     return days.get(d);
   };
-  for (const f of rows('SELECT date, kcal, protein, carbs, fat FROM food_log WHERE user_id=? AND date>=? AND date<=?', [req.uid, from, to])) {
+  for (const f of await q('SELECT date, kcal, protein, carbs, fat FROM food_log WHERE user_id=$1 AND date>=$2 AND date<=$3', [req.uid, from, to])) {
     const d = get(f.date);
     d.kcal += f.kcal; d.protein += f.protein; d.carbs += f.carbs; d.fat += f.fat;
   }
-  for (const w of rows('SELECT date, SUM(ml) AS ml FROM water_log WHERE user_id=? AND date>=? AND date<=? GROUP BY date', [req.uid, from, to])) {
+  for (const w of await q('SELECT date, SUM(ml)::int AS ml FROM water_log WHERE user_id=$1 AND date>=$2 AND date<=$3 GROUP BY date', [req.uid, from, to])) {
     get(w.date).waterMl = Math.max(0, w.ml);
   }
-  for (const x of rows('SELECT date, COUNT(*) AS n FROM workout_log WHERE user_id=? AND date>=? AND date<=? GROUP BY date', [req.uid, from, to])) {
+  for (const x of await q('SELECT date, COUNT(*)::int AS n FROM workout_log WHERE user_id=$1 AND date>=$2 AND date<=$3 GROUP BY date', [req.uid, from, to])) {
     get(x.date).exercises = x.n;
   }
-  for (const p of rows('SELECT date, weight FROM weight_log WHERE user_id=? AND date>=? AND date<=?', [req.uid, from, to])) {
+  for (const p of await q('SELECT date, weight FROM weight_log WHERE user_id=$1 AND date>=$2 AND date<=$3', [req.uid, from, to])) {
     get(p.date).weight = p.weight;
   }
   // Rellena días vacíos del rango para gráficas continuas
@@ -710,9 +560,8 @@ function nextDay(s, n = 1) {
 
 // ---------- exportar todo (backup JSON) ----------
 app.get('/api/export', auth, async (req, res) => {
-  await ready();
-  const u = rows('SELECT * FROM users WHERE id=?', [req.uid])[0];
-  const p = rows('SELECT profile_json, targets_json FROM user_profile WHERE user_id=?', [req.uid])[0];
+  const u = await q1('SELECT * FROM users WHERE id=$1', [req.uid]);
+  const p = await q1('SELECT profile_json, targets_json FROM user_profile WHERE user_id=$1', [req.uid]);
   res.json({
     ok: true,
     backup: {
@@ -720,11 +569,11 @@ app.get('/api/export', auth, async (req, res) => {
       user: pub(u),
       profile: p ? JSON.parse(p.profile_json) : null,
       targets: p ? JSON.parse(p.targets_json) : null,
-      foods: rows('SELECT date,name,kcal,protein,carbs,fat,meal,created_at FROM food_log WHERE user_id=? ORDER BY id', [req.uid]),
-      waters: rows('SELECT date,ml,created_at FROM water_log WHERE user_id=? ORDER BY id', [req.uid]),
-      workouts: rows('SELECT date,exercise FROM workout_log WHERE user_id=?', [req.uid]),
-      achievements: rows('SELECT id,unlocked_at FROM achievement WHERE user_id=? ORDER BY unlocked_at', [req.uid]),
-      weights: rows('SELECT date,weight FROM weight_log WHERE user_id=? ORDER BY date', [req.uid]),
+      foods: await q('SELECT date,name,kcal,protein,carbs,fat,meal,created_at FROM food_log WHERE user_id=$1 ORDER BY id', [req.uid]),
+      waters: await q('SELECT date,ml,created_at FROM water_log WHERE user_id=$1 ORDER BY id', [req.uid]),
+      workouts: await q('SELECT date,exercise FROM workout_log WHERE user_id=$1', [req.uid]),
+      achievements: await q('SELECT id,unlocked_at FROM achievement WHERE user_id=$1 ORDER BY unlocked_at', [req.uid]),
+      weights: await q('SELECT date,weight FROM weight_log WHERE user_id=$1 ORDER BY date', [req.uid]),
     },
   });
 });
@@ -740,12 +589,13 @@ app.get('/api/version', (req, res) => {
   });
 });
 
+
 // ---------- comunidad: amigos y ranking semanal ----------
 /** Los códigos son aleatorios y están almacenados en BD: no se pueden enumerar ni adivinar. */
-function uidFromCode(code) {
+async function uidFromCode(code) {
   const c = String(code || '').trim().toUpperCase();
   if (!/^KAL-[A-Z2-9]{6}$/.test(c)) return null;
-  const row = rows('SELECT id FROM users WHERE invite_code=?', [c])[0];
+  const row = await q1('SELECT id FROM users WHERE invite_code=$1', [c]);
   return row ? row.id : null;
 }
 function weekStart() {
@@ -754,108 +604,100 @@ function weekStart() {
   n.setDate(n.getDate() - dow);
   return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
 }
-function weekScore(uid) {
+async function weekScore(uid) {
   const ws = weekStart();
-  const days = rows(`SELECT COUNT(*) AS n FROM (
-    SELECT date FROM food_log WHERE user_id=? AND date>=?
-    UNION SELECT date FROM water_log WHERE user_id=? AND date>=? AND ml > 0
-    UNION SELECT date FROM workout_log WHERE user_id=? AND date>=?)`, [uid, ws, uid, ws, uid, ws])[0].n;
-  const works = rows('SELECT COUNT(*) AS n FROM workout_log WHERE user_id=? AND date>=?', [uid, ws])[0].n;
-  const medals = rows('SELECT COUNT(*) AS n FROM achievement WHERE user_id=?', [uid])[0].n;
+  const days = (await q1(`SELECT COUNT(*)::int AS n FROM (
+    SELECT date FROM food_log WHERE user_id=$1 AND date>=$2
+    UNION SELECT date FROM water_log WHERE user_id=$1 AND date>=$2 AND ml > 0
+    UNION SELECT date FROM workout_log WHERE user_id=$1 AND date>=$2)`, [uid, ws])).n;
+  const works = (await q1('SELECT COUNT(*)::int AS n FROM workout_log WHERE user_id=$1 AND date>=$2', [uid, ws])).n;
+  const medals = (await q1('SELECT COUNT(*)::int AS n FROM achievement WHERE user_id=$1', [uid])).n;
   return { days, works, medals, score: days * 10 + works * 5 + medals * 2 };
 }
 
 app.get('/api/social/code', auth, async (req, res) => {
-  await ready();
-  const u = rows('SELECT id, invite_code FROM users WHERE id=?', [req.uid])[0];
+  const u = await q1('SELECT id, invite_code FROM users WHERE id=$1', [req.uid]);
   if (!u) return res.status(401).json({ ok: false, error: 'no_user' });
   if (!u.invite_code) {
-    const code = genInviteCode();
-    run('UPDATE users SET invite_code=? WHERE id=?', [code, req.uid]);
-    persist();
+    const code = await genInviteCode();
+    await run('UPDATE users SET invite_code=$1 WHERE id=$2', [code, req.uid]);
     return res.json({ ok: true, code });
   }
   res.json({ ok: true, code: u.invite_code });
 });
 
 app.post('/api/social/add', auth, async (req, res) => {
-  await ready();
   if (!rateLimit('add:' + req.uid, 10, 10 * 60 * 1000)) {
     return res.status(429).json({ ok: false, error: 'demasiados_intentos' });
   }
-  const fid = uidFromCode(req.body.code);
+  const fid = await uidFromCode(req.body.code);
   if (!fid) return res.status(400).json({ ok: false, error: 'codigo_invalido' });
   if (fid === req.uid) return res.status(400).json({ ok: false, error: 'eres_tu' });
-  const exists = rows('SELECT * FROM users WHERE id=?', [fid])[0];
+  const exists = await q1('SELECT * FROM users WHERE id=$1', [fid]);
   if (!exists) return res.status(404).json({ ok: false, error: 'no_existe' });
-  run('INSERT INTO friendships(user_id,friend_id,created_at) VALUES(?,?,?) ON CONFLICT(user_id,friend_id) DO NOTHING', [req.uid, fid, now()]);
-  run('INSERT INTO friendships(user_id,friend_id,created_at) VALUES(?,?,?) ON CONFLICT(user_id,friend_id) DO NOTHING', [fid, req.uid, now()]);
-  persist();
+  await run('INSERT INTO friendships(user_id,friend_id,created_at) VALUES($1,$2,$3) ON CONFLICT(user_id,friend_id) DO NOTHING', [req.uid, fid, now()]);
+  await run('INSERT INTO friendships(user_id,friend_id,created_at) VALUES($1,$2,$3) ON CONFLICT(user_id,friend_id) DO NOTHING', [fid, req.uid, now()]);
   res.json({ ok: true, friend: pubPublic(exists) });
 });
 
 app.get('/api/social/friends', auth, async (req, res) => {
-  await ready();
-  const ids = rows('SELECT friend_id FROM friendships WHERE user_id=?', [req.uid]).map((r) => r.friend_id);
-  res.json({
-    ok: true,
-    friends: ids.map((id) => {
-      const u = rows('SELECT * FROM users WHERE id=?', [id])[0];
-      return u ? { ...pubPublic(u), week: weekScore(id) } : null;
-    }).filter(Boolean),
-  });
+  const ids = (await q('SELECT friend_id FROM friendships WHERE user_id=$1', [req.uid])).map((r) => r.friend_id);
+  const friends = [];
+  for (const id of ids) {
+    const u = await q1('SELECT * FROM users WHERE id=$1', [id]);
+    if (u) friends.push({ ...pubPublic(u), week: await weekScore(id) });
+  }
+  res.json({ ok: true, friends });
 });
 
 app.get('/api/social/leaderboard', auth, async (req, res) => {
-  await ready();
-  const ids = rows('SELECT friend_id FROM friendships WHERE user_id=?', [req.uid]).map((r) => r.friend_id);
+  const ids = (await q('SELECT friend_id FROM friendships WHERE user_id=$1', [req.uid])).map((r) => r.friend_id);
   const all = [req.uid, ...ids];
-  const rows_ = all.map((id) => {
-    const u = rows('SELECT * FROM users WHERE id=?', [id])[0];
-    return u ? { ...pubPublic(u), me: id === req.uid, week: weekScore(id) } : null;
-  }).filter(Boolean);
-  rows_.sort((a, b) => b.week.score - a.week.score);
-  res.json({ ok: true, board: rows_ });
+  const board = [];
+  for (const id of all) {
+    const u = await q1('SELECT * FROM users WHERE id=$1', [id]);
+    if (u) board.push({ ...pubPublic(u), me: id === req.uid, week: await weekScore(id) });
+  }
+  board.sort((a, b) => b.week.score - a.week.score);
+  res.json({ ok: true, board });
 });
 
 // ---------- admin ----------
 app.get('/api/admin/users', adminOnly, async (req, res) => {
-  await ready();
   const limit = Math.min(500, Math.max(1, num(req.query.limit, 200)));
   const offset = Math.max(0, num(req.query.offset, 0));
-  const users = rows(`
+  const users = await q(`
     SELECT u.id, u.name, u.email, u.provider, u.created_at,
-      (SELECT COUNT(*) FROM food_log f WHERE f.user_id=u.id) AS foods,
-      (SELECT COUNT(*) FROM water_log w WHERE w.user_id=u.id) AS waters,
-      (SELECT COUNT(*) FROM workout_log x WHERE x.user_id=u.id) AS exercises,
-      (SELECT COUNT(*) FROM achievement a WHERE a.user_id=u.id) AS medals,
+      (SELECT COUNT(*)::int FROM food_log f WHERE f.user_id=u.id) AS foods,
+      (SELECT COUNT(*)::int FROM water_log w WHERE w.user_id=u.id) AS waters,
+      (SELECT COUNT(*)::int FROM workout_log x WHERE x.user_id=u.id) AS exercises,
+      (SELECT COUNT(*)::int FROM achievement a WHERE a.user_id=u.id) AS medals,
       (SELECT p.profile_json IS NOT NULL FROM user_profile p WHERE p.user_id=u.id) AS has_profile,
       (SELECT MAX(d) FROM (
         SELECT MAX(created_at) AS d FROM food_log WHERE user_id=u.id
         UNION ALL SELECT MAX(created_at) FROM water_log WHERE user_id=u.id
-        UNION ALL SELECT u.created_at) ) AS last_activity
-    FROM users u ORDER BY u.id LIMIT ? OFFSET ?`, [limit, offset]);
+        UNION ALL SELECT u.created_at) AS mx(d)) AS last_activity
+    FROM users u ORDER BY u.id LIMIT $1 OFFSET $2`, [limit, offset]);
   const totals = {
-    users: rows('SELECT COUNT(*) AS n FROM users')[0].n,
-    foods: rows('SELECT COUNT(*) AS n FROM food_log')[0].n,
-    medals: rows('SELECT COUNT(*) AS n FROM achievement')[0].n,
+    users: (await q1('SELECT COUNT(*)::int AS n FROM users')).n,
+    foods: (await q1('SELECT COUNT(*)::int AS n FROM food_log')).n,
+    medals: (await q1('SELECT COUNT(*)::int AS n FROM achievement')).n,
   };
   res.json({ ok: true, totals, users, limit, offset });
 });
 
 app.get('/api/admin/users/:id', adminOnly, async (req, res) => {
-  await ready();
-  const u = rows('SELECT * FROM users WHERE id=?', [req.params.id])[0];
+  const u = await q1('SELECT * FROM users WHERE id=$1', [req.params.id]);
   if (!u) return res.status(404).json({ ok: false, error: 'no_user' });
-  const p = rows('SELECT profile_json, targets_json FROM user_profile WHERE user_id=?', [u.id])[0];
+  const p = await q1('SELECT profile_json, targets_json FROM user_profile WHERE user_id=$1', [u.id]);
   res.json({
     ok: true,
     user: pub(u),
     created_at: u.created_at,
     profile: p ? JSON.parse(p.profile_json) : null,
     targets: p ? JSON.parse(p.targets_json) : null,
-    recentFoods: rows('SELECT date,name,kcal,meal,created_at FROM food_log WHERE user_id=? ORDER BY id DESC LIMIT 20', [u.id]),
-    achievements: rows('SELECT id, unlocked_at FROM achievement WHERE user_id=? ORDER BY unlocked_at', [u.id]),
+    recentFoods: await q('SELECT date,name,kcal,meal,created_at FROM food_log WHERE user_id=$1 ORDER BY id DESC LIMIT 20', [u.id]),
+    achievements: await q('SELECT id, unlocked_at FROM achievement WHERE user_id=$1 ORDER BY unlocked_at', [u.id]),
   });
 });
 
@@ -879,6 +721,12 @@ app.use((err, req, res, next) => {
 });
 process.on('unhandledRejection', (e) => console.error('[unhandled]', e?.message || e));
 
-ready().then(() => {
-  app.listen(PORT, '0.0.0.0', () => console.log(`Kalory Server en http://0.0.0.0:${PORT} — panel: /admin`));
-});
+ready()
+  .then(() => {
+    app.listen(PORT, '0.0.0.0', () => console.log(`Kalory Server en http://0.0.0.0:${PORT} — Postgres, panel: /admin`));
+  })
+  .catch((e) => {
+    console.error('[config] No se pudo conectar a la base de datos:', e.message || e);
+    process.exit(1);
+  });
+

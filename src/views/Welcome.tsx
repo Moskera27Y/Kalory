@@ -23,7 +23,7 @@ const FEATURES = [
 ];
 
 export default function Welcome() {
-  const { register, login, googleSignIn } = useStore();
+  const { register, login, googleSignIn, sessionExpired } = useStore();
   const [tab, setTab] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -87,6 +87,11 @@ export default function Welcome() {
         {/* Auth card */}
         <motion.div initial={{ opacity: 0, x: 32 }} animate={{ opacity: 1, x: 0 }} transition={{ type: 'spring', stiffness: 120, damping: 20, delay: 0.1 }}
           className="glass card-glow-emerald w-full max-w-md justify-self-center p-5 sm:p-8 lg:justify-self-end">
+          {sessionExpired && (
+            <p role="alert" className="mb-4 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-2.5 text-xs text-amber-200">
+              Tu sesión anterior se cerró en el servidor. Inicia sesión de nuevo: con la base de datos persistente, tus datos siguen en tu cuenta.
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-1 rounded-xl bg-white/5 p-1">
             {(['login', 'register'] as const).map((t) => (
               <button key={t} onClick={() => { setTab(t); setError(''); }}

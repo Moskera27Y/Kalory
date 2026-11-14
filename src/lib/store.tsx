@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import type { AuthResult, AuthUser, DayData, DayHistory, MacroTargets, UserProfile, WeightEntry } from '../types';
 import { calcMacros } from './calculations';
 import { getDb, todayStr, daysAgo, type DbApi } from './db';
-import { ServerDb, clearServerSession, loadServerUrl, setServerUrlOnly, clearServerOverride, pendingCount } from './serverApi';
+import { ServerDb, clearServerSession, loadServerUrl, setServerUrlOnly, clearServerOverride, pendingCount, consumeSessionExpired } from './serverApi';
 import { clearLocalUserData } from './localCleanup';
 import { getStepsToday, isNative, stepsPluginAvailable } from './steps';
 import { loadProfileShadow, loadAchShadow, loadDay, uidFromToken } from './syncQueue';
@@ -26,6 +26,8 @@ interface Store {
   serverUrl: string;
   /** true cuando no se pudo contactar al servidor y se está viendo la copia local. */
   offline: boolean;
+  /** true cuando el servidor cerró/invalidó la sesión anterior (hay que entrar de nuevo). */
+  sessionExpired: boolean;
   setServerUrl: (url: string) => void;
   useOfficialServer: () => void;
   register: (u: { name: string; email: string; password: string }) => Promise<AuthResult>;
@@ -90,6 +92,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [stepsError, setStepsError] = useState<string | null>(null);
   const [syncPending, setSyncPending] = useState(0);
   const [offline, setOffline] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   const clearLocal = () => {
     setProfile(null);
@@ -173,6 +176,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const date = todayStr();
     try {
       const st = await db.getState();
+      // Si el servidor invalidó la sesión guardada, se avisa en bienvenida.
+      if (consumeSessionExpired()) setSessionExpired(true);
       setUser(st.user);
       if (!st.user) {
         clearLocal();
@@ -189,7 +194,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       await refreshSync();
     } catch (e) {
       // Sin sesión en el servidor → volver a bienvenida
-      if ((e as { code?: string })?.code === 'no_session') {
+      if ((e as { code?: string })?.code === 'no_user') {
+        if (consumeSessionExpired()) setSessionExpired(true);
         setUser(null);
         clearLocal();
         setOffline(false);
@@ -245,6 +251,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const afterAuth = async (r: AuthResult): Promise<AuthResult> => {
     if (r.ok) {
       setCelebration(r.user.name);
+      setSessionExpired(false);
       await refresh();
     }
     return r;
@@ -293,6 +300,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await db.logout();
     setUser(null);
     setCelebration(null);
+    setSessionExpired(false);
     clearLocal();
   };
 
@@ -395,7 +403,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         achievements, achievementDates, activeDays,
         consumed, proteinEaten, carbsEaten, fatEaten,
         celebration, dismissCelebration,
-        serverUrl, setServerUrl, useOfficialServer, offline,
+        serverUrl, setServerUrl, useOfficialServer, offline, sessionExpired,
         register, login, googleSignIn, logout,
         completeOnboarding, refresh, logFood, deleteFood, logWater, toggleExercise, resetAll, unlockMedal,
         history, weights, streak, weekWorkouts, refreshHistory, setWeight, steps, stepsSupported, stepsError, refreshSteps, syncPending, refreshSync,
